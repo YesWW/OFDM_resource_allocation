@@ -29,8 +29,8 @@ class AC(nn.Module):
             dim_feedforward=self._dim_feedforward, dropout=self._dropout,
             activation="relu", device=self._device
         )
-
-        self._actor_linear = Linear(self._d_model, self._num_rb * self._num_beam, device=device)
+ 
+        self._actor_linear = Linear(self._d_model, self._num_rb * self._num_beam * 3, device=device) # 3 is delta of power
         self._critic_linear = Linear(self._d_model, 1, device=device)
 
         self._reset_parameters()
@@ -51,13 +51,14 @@ class AC(nn.Module):
         value = self._critic_linear(value)[:, 0]
 
         logit = self._actor_linear(x)
-        logit = logit.reshape(power_alloc.size(0), self._num_rb, self._num_beam)
+        logit = logit.reshape(power_alloc.size(0), self._num_rb, self._num_beam, 3)
 
+        # if power == max: -inf
         unterminated_mask = ~(power_alloc[:, :, -1] == 1)
-        logit = torch.where(condition=unterminated_mask.unsqueeze(2), input=logit, other=-torch.inf)
-
-        
-        #logit[terminated_mask] = -torch.inf
+        logit = torch.where(condition=unterminated_mask.unsqueeze(2).unsqueeze(3), input=logit, other=-torch.inf)
+        # power == 0 -> dont assign power = 0
+        zero_power_mask = (power_alloc[:,:,0] == 1).unsqueeze(2)
+        logit[:, :, :, 0] = torch.where(zero_power_mask.expand(-1, -1, logit.size(2)), -torch.inf, logit[:, :, :, 0])
 
         act_dist = ActDist(logit, ptr, device=self._device)
         return act_dist, value
@@ -69,6 +70,7 @@ class ActDist:
         self._batch_size = int(ptr.shape[0]) - 1
         self._num_rb = logit.size(1)
         self._num_beam = logit.size(2)
+        self._power_fix_size = logit.size(3)
         self._dist_list = []
         for idx in range(self._batch_size):
             l = logit[ptr[idx]: ptr[idx + 1], :, :].to(self._device)
@@ -84,13 +86,15 @@ class ActDist:
         for dist in self._dist_list:
             if dist is not None:
                 idx = int(dist.sample())
-                node = idx // (self._num_rb * self._num_beam)
-                rbb = idx % (self._num_rb * self._num_beam)
-                rb = rbb // self._num_beam
-                beam = rbb % self._num_beam
+                node = idx // (self._num_rb * self._num_beam * self._power_fix_size)
+                rb_remain = idx % (self._num_rb * self._num_beam * self._power_fix_size)
+                rb = rb_remain // (self._num_beam * self._power_fix_size)
+                beam_remain = rb_remain % (self._num_beam * self._power_fix_size)
+                beam = beam_remain // self._power_fix_size
+                power = beam_remain % self._power_fix_size
             else:
-                node, rb, beam = -1, -1, -1
-            action.append([node, rb, beam])
+                node, rb, beam, power = -1, -1, -1, 0
+            action.append([node, rb, beam, power])
         action = torch.Tensor(action).to(torch.int).to(self._device)
         return action
 
@@ -106,14 +110,13 @@ class ActDist:
         lp = []
         for a, dist in zip(action, self._dist_list):
             if dist is not None:
-                node, rb, beam = a
-                idx = node * self._num_rb * self._num_beam + rb * self._num_beam + beam
+                node, rb, beam, power = a
+                idx = node * self._num_rb * self._num_beam * self._power_fix_size + rb * self._num_beam * self._power_fix_size + beam * self._power_fix_size + power
                 lp.append(dist.log_prob(idx))
             else:
                 lp.append(torch.tensor(-torch.inf).to(self._device))
         lp = torch.stack(lp, dim=0)
         return lp
-
 
 
 class GraphTransformer(nn.Module):
@@ -147,12 +150,12 @@ class GraphTransformer(nn.Module):
         constant_(self._node_embedding_linear.bias, 0.)
 
     def forward(self, input, node_embedding, edge_attr, edge_index):
-        # input_ = self._input_linear(input) + self._node_embedding_linear(node_embedding)
-        # x = torch.zeros_like(input_).to(self._device)
-        input = self._input_linear(input)
-        x = self._node_embedding_linear(node_embedding)
+        input_ = self._input_linear(input) + self._node_embedding_linear(node_embedding)
+        x = torch.zeros_like(input_).to(self._device)
+        # input = self._input_linear(input)
+        # x = self._node_embedding_linear(node_embedding)
         for layer in self._layer_list:
-            x = x + input
+            x = x + input_
             x = layer(x, edge_attr, edge_index)
         return x
 
