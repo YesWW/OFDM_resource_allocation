@@ -22,6 +22,7 @@ class AC(nn.Module):
         self._dim_feedforward = model_params['dim_feedforward']
         self._num_layers = model_params['actor_num_layers']
         self._dropout = model_params['dropout']
+        self._rb_emb_dim = 128  #  추가: RB embedding 차원
 
         self._graph_transformer = GraphTransformer(
             input_dim=(num_power_level + num_beam) * num_rb,
@@ -32,11 +33,17 @@ class AC(nn.Module):
             activation="relu", device=self._device
         )
 
-        self._actor_linear = Linear(self._d_model, num_rb * num_beam, device=device)
+        self._actor_linear = Linear(self._d_model, num_rb, device=device)
+        self._low_actor_linear = Linear(self._d_model, num_beam, device=device)
         self._critic_linear = Linear(self._d_model, 1, device=device)
-
-        self._link_rb_head = nn.Linear(self._d_model, num_rb, device=device)
-        self._power_beam_head = nn.Linear(self._d_model, num_power_level*num_beam, device=device)
+        self._rb_embedding = nn.Embedding(num_embeddings=num_rb, embedding_dim=self._rb_emb_dim, device=device)
+        self._beam_mlp = nn.Sequential(
+            nn.Linear(self._d_model + self._rb_emb_dim, self._d_model, device=device),
+            nn.ReLU(),
+            nn.Linear(self._d_model, num_beam, device=device)
+        )
+        # self._link_rb_head = nn.Linear(self._d_model, num_rb, device=device)
+        # self._power_beam_head = nn.Linear(self._d_model, num_power_level*num_beam, device=device)
 
         self._reset_parameters()
 
@@ -45,10 +52,8 @@ class AC(nn.Module):
         nn.init.constant_(self._actor_linear.bias, 0.)
         nn.init.xavier_uniform_(self._critic_linear.weight)
         nn.init.constant_(self._critic_linear.bias, 0.)
-        nn.init.xavier_uniform_(self._link_rb_head.weight)
-        nn.init.constant_(self._link_rb_head.bias, 0.)
-        nn.init.xavier_uniform_(self._power_beam_head.weight)
-        nn.init.constant_(self._power_beam_head.bias, 0.)
+        nn.init.xavier_uniform_(self._low_actor_linear.weight)
+        nn.init.constant_(self._low_actor_linear.bias, 0.)
 
     def forward(self, power_alloc, beam_alloc, node_power_attn, edge_power_attn, edge_index, ptr, batch):
         resource_alloc = torch.cat([power_alloc, beam_alloc], dim=2).reshape(power_alloc.size(0), -1)
@@ -66,43 +71,48 @@ class AC(nn.Module):
         action_list = []
         log_prob_list = []
         entropy_list = []
-
-        link_rb_logit = self._link_rb_head(x)   # x: [link, d_model] -> logit: [link, rb]
+        high_entropy_list = []
+        low_entropy_list = []
+        link_rb_logit = self._actor_linear(x)   # x: [link, d_model] -> logit: [link, rb]
 
         for i in range((len(ptr)-1)):
             link_rb_logit_i = link_rb_logit[ptr[i]: ptr[i+1]].view(-1)  # [real_link, rb] -> [real_link*rb,]
             link_rb_dist = Categorical(logits=link_rb_logit_i)
-            link_rb = link_rb_dist.sample()
-            link = link_rb // self._num_rb
-            rb = link_rb % self._num_rb
+            link_rb_sample = link_rb_dist.sample()
+            link = link_rb_sample // self._num_rb
+            rb = link_rb_sample % self._num_rb
             
-            x_lr = x[ptr[i]+link]   # [d_model]
+            selected_x = x[ptr[i] + link]  # 선택된 link feature
 
             # Step 2: Power selection
             #power_input = torch.cat([x_i, rb_embed], dim=-1)
-            power_beam_logit = self._power_beam_head(x_lr)
-            power_beam_dist = Categorical(logits=power_beam_logit)
-            power_beam = power_beam_dist.sample()
-            power = power_beam // self._num_beam
-            beam = power_beam % self._num_beam
+            rb_emb = self._rb_embedding(rb)
+            beam_input = torch.cat([selected_x, rb_emb], dim=-1)
+
+            beam_logits = self._beam_mlp(beam_input)
+            beam_dist = Categorical(logits=beam_logits)
+            beam_sample = beam_dist.sample()
 
             # Store per-graph results
-            action = torch.stack([link, rb, power, beam], dim=-1)
-            log_prob = link_rb_dist.log_prob(link_rb) + \
-                       power_beam_dist.log_prob(power_beam)
-            entropy = link_rb_dist.entropy() + \
-                      power_beam_dist.entropy()
+            action = torch.stack([link, rb, beam_sample], dim=-1)
+            log_prob = link_rb_dist.log_prob(link_rb_sample) + beam_dist.log_prob(beam_sample)
+            entropy = link_rb_dist.entropy() + beam_dist.entropy()
 
             action_list.append(action)
             log_prob_list.append(log_prob)
+            
+            high_entropy_list.append(link_rb_dist.entropy())
+            low_entropy_list.append(beam_dist.entropy())
             entropy_list.append(entropy)
 
         # Concatenate all graphs' results
         action_ = torch.stack(action_list, dim=0)
         log_prob_ = torch.stack(log_prob_list, dim=0)
         entropy_ = torch.stack(entropy_list, dim=0)
+        high_entropy_ = torch.stack(high_entropy_list, dim=0)
+        low_entropy_ = torch.stack(low_entropy_list, dim=0)
 
-        return action_, log_prob_, entropy_, value
+        return action_, log_prob_, entropy_, value, high_entropy_, low_entropy_
 
         # # (R, K, 3)
         # rb_ids = torch.arange(self._num_rb, device=self._device)        # (R,)
@@ -147,6 +157,40 @@ class AC(nn.Module):
         # zero_power_mask = (power_alloc[:,:,0] == 1).unsqueeze(2)
         # logit[:, :, :, 0] = torch.where(zero_power_mask.expand(-1, -1, logit.size(2)), -torch.inf, logit[:, :, :, 0])
 
+        action_list = []
+        log_prob_list = []
+        entropy_list = []
+
+        for i in range((len(ptr)-1)):
+            link_rb_logit_i = link_rb_logit[ptr[i]: ptr[i+1]].view(-1)  # [real_link, rb] -> [real_link*rb,]
+            link_rb_dist = Categorical(logits=link_rb_logit_i)
+            link_rb = link_rb_dist.sample()
+            link = link_rb // self._num_rb
+            rb = link_rb % self._num_rb
+            
+            selected_x = x[ptr[i]+link]   # [d_model]
+
+            # Step 2: Power selection
+            #power_input = torch.cat([x_i, rb_embed], dim=-1)
+            beam_logits = self._low_actor_linear(selected_x)  # (num_beam,)
+            beam_dist = Categorical(logits=beam_logits)
+            beam_sample = beam_dist.sample()
+
+            # Store per-graph results
+            action = torch.stack([link, rb, beam_sample], dim=-1)  # (link, rb, beam)
+            log_prob = link_rb_dist.log_prob(link_rb) + beam_dist.log_prob(beam_sample)
+            entropy = link_rb_dist.entropy() + beam_dist.entropy()
+
+            action_list.append(action)
+            log_prob_list.append(log_prob)
+            entropy_list.append(entropy)
+
+        # Concatenate all graphs' results
+        action_ = torch.stack(action_list, dim=0)
+        log_prob_ = torch.stack(log_prob_list, dim=0)
+        entropy_ = torch.stack(entropy_list, dim=0)
+
+        return action_, log_prob_, entropy_, value
         
         # #logit[terminated_mask] = -torch.inf
 

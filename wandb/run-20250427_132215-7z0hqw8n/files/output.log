@@ -1,0 +1,21 @@
+Traceback (most recent call last):
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\trainer.py", line 374, in <module>
+    tn.train(use_wandb=True, save_model=True)
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\trainer.py", line 222, in train
+    buf = self.roll_out(g, networks)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\trainer.py", line 143, in roll_out
+    action, act_log_prob, _, value = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc,
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\nn\modules\module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\nn\modules\module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\model.py", line 69, in forward
+    link_rb_logit = self._link_rb_head(x)   # x: [link, d_model] -> logit: [link, rb]
+                    ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\nn\modules\module.py", line 1709, in __getattr__
+    raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+AttributeError: 'AC' object has no attribute '_link_rb_head'

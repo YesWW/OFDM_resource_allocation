@@ -15,6 +15,7 @@ from utility import Buffer, get_buffer_dataloader
 import wandb
 import time
 import pandas as pd
+import os
 
 
 class trainer:
@@ -134,13 +135,13 @@ class trainer:
         target_buf = []
         self._ac.eval()
 
-        # patience = 30
+        # patience = 10
         # zero_improvement_counter = torch.zeros(batch_size, dtype=torch.int).to(self._device)
         # best_target_score = torch.full((batch_size,), float('-inf')).to(self._device)
 
         with torch.no_grad():
             while torch.any(ongoing):
-                action, act_log_prob, _, value = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc,
+                action, act_log_prob, _, value, _, _ = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc,
                                            node_power_attn=g2.x, edge_power_attn=g2.edge_attr, edge_index=g2.edge_index, ptr=ptr, batch=batch)
                 #action = act_dist.sample()
                 #act_log_prob = act_dist.log_prob(action)
@@ -156,11 +157,16 @@ class trainer:
                 # update resource allocation
                 for idx, act in enumerate(action):
                     if ongoing[idx]:
-                        link, rb, power, beam = act
+                        link, rb, beam = act
                         ptr_link = ptr[idx] + link
+                        # link_power_level = torch.nonzero(power_alloc[ptr_link][rb])
+                        # power_alloc[ptr_link][rb][link_power_level] = 0
+                        # power_alloc[ptr_link][rb][power] = 1 
                         link_power_level = torch.nonzero(power_alloc[ptr_link][rb])
-                        power_alloc[ptr_link][rb][link_power_level] = 0
-                        power_alloc[ptr_link][rb][power] = 1 
+                        current_power_idx = link_power_level.item()
+                        if current_power_idx < (self._num_power_level - 1):
+                            power_alloc[ptr_link][rb][current_power_idx] = 0
+                            power_alloc[ptr_link][rb][current_power_idx + 1] = 1
 
                         link_beam_index = torch.nonzero(beam_alloc[ptr_link][rb]).view(-1)
                         if link_beam_index.numel() != 0:
@@ -175,15 +181,15 @@ class trainer:
                         target_score = float(self._sim.get_optimization_target(networks[idx], solution))
                         val = torch.any(unterminated_node[ptr[idx]: ptr[idx+1]]) & torch.tensor(bool(is_feasible), dtype=torch.bool, device=self._device)
                         ongoing[idx] = val
-                        # # 최고 점수와 비교
-                        # if target_score > best_target_score[idx]:
-                        #     best_target_score[idx] = target_score
-                        #     zero_improvement_counter[idx] = 0
-                        # else:
-                        #     zero_improvement_counter[idx] += 1
-                        # # patience 초과 시 종료
-                        # if zero_improvement_counter[idx] >= patience:
-                        #     ongoing[idx] = False
+                        # 최고 점수와 비교
+                        if target_score > best_target_score[idx]:
+                            best_target_score[idx] = target_score
+                            zero_improvement_counter[idx] = 0
+                        else:
+                            zero_improvement_counter[idx] += 1
+                        # patience 초과 시 종료
+                        if zero_improvement_counter[idx] >= patience:
+                            ongoing[idx] = False
                     else:
                         target_score = 0
                     target.append(target_score)
@@ -237,7 +243,7 @@ class trainer:
                 valid_mask = ongoing.bool()
             
                 # Train actor
-                _, act_log_prob, entropy, value = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc, 
+                _, act_log_prob, entropy, value, high_entropy, low_entropy = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc, 
                                node_power_attn=g['x'], edge_power_attn=g['edge_attr'], 
                                edge_index=g['edge_index'], ptr=g['ptr'], batch=g['batch'])
                 # Calculate PPO actor loss
@@ -274,7 +280,7 @@ class trainer:
                 print(log)
                 if use_wandb:
                     wandb_log = {"train/step": train_step, "train/actor_loss": actor_loss,
-                                    "train/value_loss": value_loss, "train/entropy_loss": entropy_loss,
+                                    "train/value_loss": value_loss, "train/entropy_loss": entropy_loss, "train/link_rb_entropy": high_entropy, "train/beam_entropy": low_entropy,
                                     "train/total_loss": total_loss, "train/time": cumulative_time}
                     wandb.log(wandb_log)
 
@@ -304,7 +310,7 @@ class trainer:
         buf.cal_reward()
         reward = buf.get_performance()
         target = buf._target.mean()
-        #self.rollout_to_dataframe(buf)
+        self.rollout_to_dataframe(buf)
         reward = reward.mean()
         
 
@@ -342,27 +348,27 @@ class trainer:
         self._ac.load_state_dict(torch.load(path / 'ac.pt', map_location='cuda:0')) 
 
 
-    def rollout_to_dataframe(self, buf, save_path='rollout_summary.csv'):
+    def rollout_to_dataframe(self, buf, save_path='rollout_summary_batch0.csv'):
         step_n, batch_size, action_dim = buf._action.shape
         records = []
 
+        b = 0  # 오직 batch index 0만 대상으로
         for t in range(step_n):
-            for b in range(batch_size):
-                record = {
-                    "step": t,
-                    "batch_index": b,
-                    "action": buf._action[t, b].tolist(),
-                    "target_value": buf._target[t, b].item(),
-                    "power_alloc_sum": buf._power_alloc[t].sum().item(),
-                    "beam_alloc_sum": buf._beam_alloc[t].sum().item(),
-                    "value": buf._value[t, b].item(),
-                    "ongoing": bool(buf._ongoing[t, b].item())
-                }
-                records.append(record)
+            record = {
+                "step": t,
+                "batch_index": b,
+                "action": buf._action[t, b].tolist(),
+                "target_value": buf._target[t, b].item(),
+                "power_alloc_sum": buf._power_alloc[t].sum().item(),
+                "beam_alloc_sum": buf._beam_alloc[t].sum().item(),
+                "value": buf._value[t, b].item(),
+                "ongoing": bool(buf._ongoing[t, b].item())
+            }
+            records.append(record)
 
         df = pd.DataFrame(records)
         df.to_csv(save_path, index=False)
-        print(f"Rollout summary saved to {save_path}")
+        print(f"Rollout summary for batch 0 saved to {save_path}")
 
 
 
@@ -370,7 +376,7 @@ if __name__ == '__main__':
     device = 'cuda:0'
     tn = trainer(params_file='config.yaml', device=device)
     #tn.roll_out()
-    #tn.load_model()
-    tn.train(use_wandb=True, save_model=True)
-    #tn.evaluate()
+    tn.load_model()
+    #tn.train(use_wandb=True, save_model=True)
+    tn.evaluate()
     print(1)
