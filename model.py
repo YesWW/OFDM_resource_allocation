@@ -116,7 +116,6 @@ class ActDist:
         return lp
 
 
-
 class GraphTransformer(nn.Module):
     def __init__(self, input_dim, embedding_dim, num_layers, d_model, n_head, edge_dim, dim_feedforward, dropout, activation="relu", device='cpu'):
         super(GraphTransformer, self).__init__()

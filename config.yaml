@@ -49,6 +49,6 @@ train.PPO_clip: 0.2
 train.act_prob_ratio_exponent_clip: 10.0
 
 # eval params
-train.eval_period: 1
+train.eval_period: 5
 train.eval_batch_size: 5  # Controls how many eval batch size are in the data
 
