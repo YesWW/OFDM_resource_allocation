@@ -134,10 +134,10 @@ class trainer:
 
         with torch.no_grad():
             while torch.any(ongoing):
-                act_dist, value = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc,
+                action, act_log_prob, value, _ = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc,
                                            node_power_attn=g2.x, edge_power_attn=g2.edge_attr, edge_index=g2.edge_index, ptr=ptr, batch=batch)
-                action = act_dist.sample()
-                act_log_prob = act_dist.log_prob(action)
+                # action = act_dist.sample()
+                # act_log_prob = act_dist.log_prob(action)
 
                 power_alloc_buf.append(power_alloc.detach().clone().cpu())
                 beam_alloc_buf.append(beam_alloc.detach().clone().cpu())
@@ -152,14 +152,9 @@ class trainer:
                     if ongoing[idx]:
                         link, rb, beam, power = act
                         ptr_link = ptr[idx] + link
-                        #link_power_level = torch.nonzero(power_alloc[ptr_link][rb])
-                        #power_alloc[ptr_link][rb][link_power_level] = 0
-                        #power_alloc[ptr_link][rb][link_power_level+1] = 1
+
                         power_alloc[ptr_link][rb][power] = 1.0
-                        
-                        # link_beam_index = torch.nonzero(beam_alloc[ptr_link][rb])
-                        # if link_beam_index.numel() != 0:
-                        #     beam_alloc[ptr_link][rb][link_beam_index] = 0
+
                         beam_alloc[ptr_link][rb][beam] = 1.0
 
                         unallocated_rb[ptr_link][rb] = False
@@ -216,19 +211,18 @@ class trainer:
                 g = d['graph']
                 power_alloc = d['power_alloc']
                 beam_alloc = d['beam_alloc']
-                action = d['action']
+                #action = d['action']
                 init_act_log_prob = d['act_log_prob']
                 lambda_return = d['return']                    
                 advantage = lambda_return - d['value']
-                ongoing = d['ongoing']
-                valid_mask = ongoing.bool()
+
             
                 # Train actor
-                act_dist, value = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc, 
+                _, act_log_prob, value, entropy = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc, 
                                node_power_attn=g['x'], edge_power_attn=g['edge_attr'], 
                                edge_index=g['edge_index'], ptr=g['ptr'], batch=g['batch'])
                 # Calculate PPO actor loss
-                act_log_prob = act_dist.log_prob(action)
+                # act_log_prob = act_dist.log_prob(action)
                 act_prob_ratio = torch.exp(torch.clamp(act_log_prob - init_act_log_prob,
                                                         max=self._act_prob_ratio_exponent_clip))
                 actor_loss = torch.where(advantage >= 0,
@@ -240,7 +234,7 @@ class trainer:
                 actor_loss = torch.mean(actor_loss)
                 
                 #entropy_loss = -torch.mean(act_dist.entropy()[valid_mask])
-                entropy_loss = -torch.mean(act_dist.entropy())
+                entropy_loss = -torch.mean(entropy)
 
                 #value_loss = nn.MSELoss()(value[valid_mask], lambda_return[valid_mask])
                 value_loss = nn.MSELoss()(value, lambda_return)
@@ -331,6 +325,6 @@ class trainer:
 if __name__ == '__main__':
     device = 'cuda:0'
     tn = trainer(params_file='config.yaml', device=device)
-    tn.train(use_wandb=False, save_model=True)
+    tn.train(use_wandb=True, save_model=True)
     #tn.evaluate()
     print(1)

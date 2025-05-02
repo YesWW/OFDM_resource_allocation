@@ -21,7 +21,7 @@ class AC(nn.Module):
         self._num_layers = model_params['actor_num_layers']
         self._dropout = model_params['dropout']
 
-        self._graph_transformer = GraphTransformer(
+        self.gnn1 = GraphTransformer(
             input_dim=(self._num_power_level + self._num_beam) * self._num_rb,
             embedding_dim=self._power_attn_num_level * self._num_rb * self._num_beam,
             num_layers=self._num_layers, d_model=self._d_model, n_head=self._n_head,
@@ -30,35 +30,96 @@ class AC(nn.Module):
             activation="relu", device=self._device
         )
 
-        self._actor_linear = Linear(self._d_model, self._num_rb * self._num_beam * self._num_power_level, device=device)
-        self._critic_linear = Linear(self._d_model, 1, device=device)
+        self.link_rb_head = Linear(self._d_model, num_rb, device=device)
+        self._rb_embedding = nn.Embedding(num_rb, self._d_model, device=device)
+
+        # Second GNN: refine after link-RB selection
+
+
+        # Final prediction heads
+        self.beam_head = nn.Sequential(
+            nn.Linear(self._d_model * 3, self._d_model, device=device),
+            nn.ReLU(),
+            nn.Linear(self._d_model, num_beam, device=device)
+        )
+        self.power_head = nn.Sequential(
+            nn.Linear(self._d_model * 3, self._d_model, device=device),
+            nn.ReLU(),
+            nn.Linear(self._d_model, num_power_level, device=device)
+        )
+
+        self.value_head = Linear(self._d_model, 1, device=device)
 
         self._reset_parameters()
 
     def _reset_parameters(self):
-        nn.init.xavier_uniform_(self._actor_linear.weight)
-        nn.init.constant_(self._actor_linear.bias, 0.)
-        nn.init.xavier_uniform_(self._critic_linear.weight)
-        nn.init.constant_(self._critic_linear.bias, 0.)
+        # nn.init.xavier_uniform_(self._actor_linear.weight)
+        # nn.init.constant_(self._actor_linear.bias, 0.)
+        # nn.init.xavier_uniform_(self._critic_linear.weight)
+        # nn.init.constant_(self._critic_linear.bias, 0.)
+        pass
 
     def forward(self, power_alloc, beam_alloc, node_power_attn, edge_power_attn, edge_index, ptr, batch):
         resource_alloc = torch.cat([power_alloc, beam_alloc], dim=2).reshape(power_alloc.size(0), -1)
         node_power_attn = node_power_attn.reshape(node_power_attn.size(0), -1)
         edge_power_attn = edge_power_attn.reshape(edge_power_attn.size(0), -1)
-        x = self._graph_transformer(input=resource_alloc, node_embedding=node_power_attn,
+        x = self.gnn1(input=resource_alloc, node_embedding=node_power_attn,
                                     edge_attr=edge_power_attn, edge_index=edge_index)
-        value = global_mean_pool(x=x, batch=batch)
-        value = self._critic_linear(value)[:, 0]
+        
+        # link-RB 선택
+        link_rb_logits = self.link_rb_head(x)  # [link, rb]
+        link_rb_mask = (power_alloc.sum(dim=2) == 0)
+        masked_logits = link_rb_logits.masked_fill(~link_rb_mask, -float('inf'))
+        actions, log_probs, values, entropies = [], [], [], []
+        global_ctx = x.mean(dim=0)
 
-        logit = self._actor_linear(x)
-        logit = logit.reshape(power_alloc.size(0), self._num_rb, self._num_beam, self._num_power_level)
+        for i in range(len(ptr) - 1):
+            x_i = x[ptr[i]:ptr[i+1]]
+            logits_i = masked_logits[ptr[i]:ptr[i+1]].flatten()
+            if torch.all(torch.isinf(logits_i)):
+                # fallback: return stop action (-1, -1, 0, 0) with 0 log_prob, value
+                actions.append(torch.tensor([-1, -1, 0, 0], device=self._device))
+                log_probs.append(torch.tensor(-torch.inf).to(self._device))
+                values.append(torch.tensor(0.0, device=self._device))
+                entropies.append(torch.tensor(0.0, device=self._device))
+                continue
+            dist_i = Categorical(logits=logits_i)
+            idx = int(dist_i.sample())
+            link = idx // self._num_rb
+            rb = idx % self._num_rb
+            logp_linkrb = dist_i.log_prob(torch.tensor(idx, device=self._device))
 
-        unterminated_mask = (torch.sum(power_alloc, dim=2) < 1.0)
-        unterminated_mask = unterminated_mask[:, :, None, None]  # (link, rb, 1, 1)
-        logit = torch.where(condition=unterminated_mask, input=logit, other=-torch.inf)
+            # 선택된 정보
+            x_selected = x_i[link]
+            rb_emb = self._rb_embedding(torch.tensor(rb, device=self._device))
+            ctx = torch.cat([x_selected, rb_emb, global_ctx], dim=-1)
 
-        act_dist = ActDist(logit, ptr, device=self._device)
-        return act_dist, value
+            # beam/power logits from MLP
+            beam_logits = self.beam_head(ctx)
+            power_logits = self.power_head(ctx)
+
+            beam_dist = Categorical(logits=beam_logits)
+            power_dist = Categorical(logits=power_logits)
+
+            beam = beam_dist.sample()
+            power = power_dist.sample()
+
+            logp_beam = beam_dist.log_prob(beam)
+            logp_power = power_dist.log_prob(power)
+
+            total_logp = logp_linkrb + logp_beam + logp_power
+
+            actions.append(torch.stack([torch.tensor(link, device=self._device), torch.tensor(rb, device=self._device), beam, power]))
+            log_probs.append(total_logp)
+            values.append(self.value_head(x_i.mean(dim=0)).squeeze())
+            entropies.append(beam_dist.entropy() + power_dist.entropy())
+
+        actions = torch.stack(actions).to(self._device)
+        log_probs = torch.stack(log_probs)
+        values = torch.stack(values)
+        entropies = torch.stack(entropies)
+
+        return actions, log_probs, values, entropies
 
 class ActDist:
     def __init__(self, logit, ptr, device):
