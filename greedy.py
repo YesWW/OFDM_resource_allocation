@@ -3,7 +3,7 @@ import time
 import random
 import pandas as pd
 from pathlib import Path
-from ofdm_simulator.ofdm_simulator import OFDMSimulator
+from ofdm_simulator.ofdm_simulator_4 import OFDMSimulator
 
 class GreedySolverOFDM:
     def __init__(self, data_dir, tx_power_range, max_bs_power,
@@ -90,11 +90,11 @@ class GreedySolverOFDM:
 
 if __name__ == '__main__':
     data_dir = 'myeongdong_arr_4_rb_16'
-    tx_power_range = {'max_power': 2, 'num_power_level': 16}
+    tx_power_range = {'max_power': 2, 'num_power_level': 4}
     max_bs_power = 10
     noise_spectral_density = -174.0
     alpha = 0.0
-    num_ue_range = [50, 100]
+    num_ue_range = [20, 40]
     gpu = True
 
     alg = GreedySolverOFDM(data_dir=data_dir,

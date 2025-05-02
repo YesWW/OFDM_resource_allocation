@@ -3,6 +3,7 @@ import random
 import time
 from ofdm_simulator.ofdm_simulator_4 import OFDMSimulator
 import pandas as pd
+import dill
 
 class TabuSearch:
     def __init__(self, data_dir, tx_power_range, max_bs_power, noise_spectral_density, alpha,
@@ -30,10 +31,11 @@ class TabuSearch:
     def solve_evaluation_network(self, index):
         network = self._sim.get_evaluation_network(self.eval_file_list[index])
         perf, elapsed_time, solution = self.solve(network)
+
         return perf, elapsed_time, solution
 
     def solve(self, network):
-        log_path = "tabu_log.csv"
+        trajectory_data = []
         start = time.perf_counter()
         ch = network['ch']
         num_link = ch.shape[0]
@@ -41,7 +43,6 @@ class TabuSearch:
         all_moves = self.get_all_moves(num_link)
         cur_solution = self.get_initial_solution(num_link)
         best_solution, best_perf = None, -np.inf
-        log_data = []
         for it in range(self._tabu_max_iterations):
             cand_moves, cand_solutions = self.apply_move(cur_solution, all_moves)
             selected_solution, selected_move, selected_perf = None, None, -np.inf
@@ -55,24 +56,19 @@ class TabuSearch:
                         best_solution, best_perf = cand_solution, cand_perf
             if selected_solution is None:
                 break
+            traj = {'power': selected_solution['power_level'],
+                    'beam' : selected_solution['beam_index'],
+                    'action': selected_move,
+                    'perf': selected_perf}
+            trajectory_data.append(traj)
             cur_solution = selected_solution
             tabu_list[selected_move] = self._tabu_tenure
             tabu_list = {move:(tenure - 1) for move, tenure in tabu_list.items() if tenure > 1}
             print(f"iteration: {it}, performance: {best_perf}")
-            elapsed_time = time.perf_counter() - start
-            log_data.append({
-                "iteration": it,
-                "elapsed_time_sec": elapsed_time,
-                "best_performance": best_perf,
-                })
-        df_p = pd.DataFrame(cur_solution['power_level'])
-        df_b = pd.DataFrame(cur_solution['beam_index'])
-        df_p.to_csv("power_level_result.csv")
-        df_b.to_csv("beam_index_result.csv")
+            
         end = time.perf_counter()
-        df_log = pd.DataFrame(log_data)
-        df_log.to_csv(log_path, index=False)
         total_elapsed_time = end - start
+        
         return best_perf, total_elapsed_time, best_solution
 
     def get_all_moves(self, num_link):
@@ -101,6 +97,39 @@ class TabuSearch:
             cand_solutions.append({'power_level': pl, 'beam_index': bi})
         return cand_moves, cand_solutions
 
+    def solve_bc(self, network):
+        power = []
+        beam = []
+        action = []
+        ch = network['ch']
+        num_link = ch.shape[0]
+        tabu_list = {}
+        all_moves = self.get_all_moves(num_link)
+        cur_solution = self.get_initial_solution(num_link)
+        best_solution, best_perf = None, -np.inf
+        for it in range(self._tabu_max_iterations):
+            cand_moves, cand_solutions = self.apply_move(cur_solution, all_moves)
+            selected_solution, selected_move, selected_perf = None, None, -np.inf
+            for cand_move, cand_solution in zip(cand_moves, cand_solutions):
+                feasible = self._sim.is_solution_feasible(network, cand_solution)
+                if feasible:
+                    cand_perf = self._sim.get_optimization_target(network, cand_solution)
+                    if cand_perf > selected_perf and ((cand_move not in tabu_list) or cand_perf > best_perf):
+                        selected_solution, selected_move, selected_perf = cand_solution, cand_move, cand_perf
+                    if cand_perf > best_perf:
+                        best_solution, best_perf = cand_solution, cand_perf
+            if selected_solution is None:
+                break
+            power.append(selected_solution['power_level'])
+            beam.append(selected_solution['beam_index'])
+            action.append(selected_move)
+
+            cur_solution = selected_solution
+            tabu_list[selected_move] = self._tabu_tenure
+            tabu_list = {move:(tenure - 1) for move, tenure in tabu_list.items() if tenure > 1}
+
+
+        return power, beam, action
 
 if __name__ == '__main__':
     data_dir = 'myeongdong_arr_4_rb_16'
@@ -110,11 +139,12 @@ if __name__ == '__main__':
     alpha = 0.0  # coefficient for alpha-fairness function (0.0: sum, 1.0: proportional, inf: max-min)
     gpu = True
     tabu_move_selection_prob = 0.01
-    tabu_max_iterations = 1000
+    tabu_max_iterations = 500
     tabu_tenure = 100
     alg = TabuSearch(data_dir, tx_power_range, max_bs_power, noise_spectral_density, alpha,
                      tabu_move_selection_prob, tabu_max_iterations, tabu_tenure, gpu)
+    #alg.solve_all_evaluation_networks()
     perf, elapsed_time, solution = alg.solve_evaluation_network(0)
     print(f'Performance: {perf}, Elapsed time: {elapsed_time}')
-
+    print(1)
 

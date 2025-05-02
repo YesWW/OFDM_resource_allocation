@@ -45,11 +45,11 @@ class Buffer:
         return out
 
     def cal_reward(self):
-        self._reward = torch.zeros_like(self._target)
-        self._reward[1:] = self._target[1:] - self._target[:-1]
-        self._reward[0] = torch.zeros_like(self._reward[0])
+        # self._reward = torch.zeros_like(self._target)
+        # self._reward[1:] = self._target[1:] - self._target[:-1]
+        # self._reward[0] = torch.zeros_like(self._reward[0])
         #self._reward *= 100
-        #self._reward = self._target.clone()
+        self._reward = self._target.clone()
 
     def get_performance(self):
         return self._reward

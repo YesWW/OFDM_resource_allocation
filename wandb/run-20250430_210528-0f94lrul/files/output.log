@@ -1,0 +1,88 @@
+C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\trainer.py:393: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  action_labels = torch.tensor(action_t, dtype=torch.long, device=self._device)
+[Epoch 1] IL avg loss: 6.0938
+target value: 19.667036056518555
+[Epoch 2] IL avg loss: 5.1838
+[Epoch 3] IL avg loss: 4.8742
+[Epoch 4] IL avg loss: 4.6254
+[Epoch 5] IL avg loss: 4.4264
+[Epoch 6] IL avg loss: 4.2142
+[Epoch 7] IL avg loss: 3.9652
+[Epoch 8] IL avg loss: 3.7488
+[Epoch 9] IL avg loss: 3.5054
+[Epoch 10] IL avg loss: 3.2820
+[Epoch 11] IL avg loss: 3.0830
+target value: 24.547075271606445
+[Epoch 12] IL avg loss: 2.8712
+[Epoch 13] IL avg loss: 2.6945
+[Epoch 14] IL avg loss: 2.5385
+[Epoch 15] IL avg loss: 2.3829
+[Epoch 16] IL avg loss: 2.2664
+[Epoch 17] IL avg loss: 2.1266
+[Epoch 18] IL avg loss: 2.0327
+[Epoch 19] IL avg loss: 1.9351
+[Epoch 20] IL avg loss: 1.8447
+[Epoch 21] IL avg loss: 1.7683
+target value: 15.099848747253418
+[Epoch 22] IL avg loss: 1.7066
+[Epoch 23] IL avg loss: 1.6435
+[Epoch 24] IL avg loss: 1.5981
+[Epoch 25] IL avg loss: 1.5209
+[Epoch 26] IL avg loss: 1.4903
+[Epoch 27] IL avg loss: 1.4265
+[Epoch 28] IL avg loss: 1.3858
+[Epoch 29] IL avg loss: 1.3502
+[Epoch 30] IL avg loss: 1.3283
+[Epoch 31] IL avg loss: 1.2586
+target value: 14.722512245178223
+[Epoch 32] IL avg loss: 1.2415
+[Epoch 33] IL avg loss: 1.2130
+[Epoch 34] IL avg loss: 1.1918
+[Epoch 35] IL avg loss: 1.1466
+[Epoch 36] IL avg loss: 1.1321
+[Epoch 37] IL avg loss: 1.0964
+[Epoch 38] IL avg loss: 1.0909
+[Epoch 39] IL avg loss: 1.0696
+[Epoch 40] IL avg loss: 1.0395
+[Epoch 41] IL avg loss: 1.0270
+target value: 12.768373489379883
+[Epoch 42] IL avg loss: 1.0275
+[Epoch 43] IL avg loss: 0.9940
+[Epoch 44] IL avg loss: 0.9580
+[Epoch 45] IL avg loss: 0.9557
+[Epoch 46] IL avg loss: 0.9544
+[Epoch 47] IL avg loss: 0.9456
+[Epoch 48] IL avg loss: 0.9139
+[Epoch 49] IL avg loss: 0.9007
+[Epoch 50] IL avg loss: 0.8941
+[Epoch 51] IL avg loss: 0.8861
+Traceback (most recent call last):
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\trainer.py", line 427, in <module>
+    tn.train_bc(use_wandb=True)
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\trainer.py", line 416, in train_bc
+    self.evaluate(use_wandb)
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\trainer.py", line 288, in evaluate
+    buf = self.roll_out(g, networks)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\trainer.py", line 138, in roll_out
+    act_dist, value = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc,
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\nn\modules\module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\nn\modules\module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\model.py", line 50, in forward
+    value = global_mean_pool(x=x, batch=batch)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch_geometric\nn\pool\glob.py", line 63, in global_mean_pool
+    return scatter(x, batch, dim=dim, dim_size=size, reduce='mean')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch_geometric\utils\_scatter.py", line 53, in scatter
+    dim_size = int(index.max()) + 1 if index.numel() > 0 else 0
+               ^^^^^^^^^^^^^^^^
+RuntimeError: CUDA error: out of memory
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1.
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.

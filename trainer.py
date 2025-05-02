@@ -14,6 +14,8 @@ from model import AC
 from utility import Buffer, get_buffer_dataloader
 import wandb
 import time
+from tabu_search import TabuSearch
+
 
 class trainer:
     def __init__(self, params_file, device):
@@ -28,8 +30,6 @@ class trainer:
                 self._config = yaml.safe_load(f)
             
             
-
-            
             # simul params
             simul_params = {k[4:]: self._config[k] for k in self._config.keys() if k.startswith('sim.')}
             self._sim = OFDMSimulator(**simul_params)
@@ -41,7 +41,6 @@ class trainer:
             # model params
             model_params = {k[6:]: self._config[k] for k in self._config.keys() if k.startswith('model.')}
 
-            
             
             # train parameters
             self._gamma = self._config['train.gamma']
@@ -56,7 +55,7 @@ class trainer:
             self._power_attn_boundaries = torch.linspace(self._min_attn_db, self._max_attn_db, self._power_attn_n_cls).to(self._device)
             
             # model architecture
-            self._ac = AC(num_power_level=self._num_power_level, num_rb=self._num_rb, num_beam=self._num_beam,
+            self._ac = AC(num_power=self._num_power_level, num_rb=self._num_rb, num_beam=self._num_beam,
                            power_attn_num_level=self._power_attn_n_cls, model_params=model_params, device=device)
 
             self._num_graph_repeat = self._config['train.num_graph_repeat']
@@ -78,6 +77,7 @@ class trainer:
             self._eval_networks = self._sim.generate_evaluation_networks(self._num_evaluation_networks)
             self._eval_data = self._sim.generate_pyg(self._eval_networks, min_attn_db=self._min_attn_db,
                                                       max_attn_db=self._max_attn_db, device=self._device)
+
 
     def quantize_power_attn(self, g):
         '''Quantize the continous data graphs into a discrete data 
@@ -120,6 +120,7 @@ class trainer:
 
         g2 = self.quantize_power_attn(g)
         power_alloc[:,:,0] = 1
+        beam_alloc[:,:,0] = 1
         unterminated_node = torch.full(size=(num_node, self._num_rb), fill_value=True).to(self._device)
         ongoing = torch.full(size=(batch_size,), fill_value=True).to(self._device)
 
@@ -150,11 +151,11 @@ class trainer:
                 # update resource allocation
                 for idx, act in enumerate(action):
                     if ongoing[idx]:
-                        link, rb, beam = act
+                        link, rb, power, beam = act
                         ptr_link = ptr[idx] + link
                         link_power_level = torch.nonzero(power_alloc[ptr_link][rb])
                         power_alloc[ptr_link][rb][link_power_level] = 0
-                        power_alloc[ptr_link][rb][link_power_level+1] = 1
+                        power_alloc[ptr_link][rb][power] = 1
                         
                         link_beam_index = torch.nonzero(beam_alloc[ptr_link][rb])
                         if link_beam_index.numel() != 0:
@@ -189,7 +190,7 @@ class trainer:
     def train(self, use_wandb=False, save_model=True):
         # initialize the wandb
         if use_wandb:
-            wandb.init(project='OFDM_resource_allocation', config=self._config)
+            wandb.init(project='OFDM_resource_allocation_IL', config=self._config)
             wandb.define_metric("train/step")
             wandb.define_metric("train/*", step_metric="train/step")
             wandb.define_metric("evaluate/*")
@@ -219,7 +220,6 @@ class trainer:
                 lambda_return = d['return']                    
                 advantage = lambda_return - d['value']
                 ongoing = d['ongoing']
-                valid_mask = ongoing.bool()
             
                 # Train actor
                 act_dist, value = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc, 
@@ -278,7 +278,7 @@ class trainer:
             use_wandb (bool): track the training results on wandb
 
         '''
-
+        torch.cuda.empty_cache()
         # eval data
         # networks = self._sim.get_networks(num_networks=self._eval_batch_size)
         # g = self._sim.generate_pyg(networks=networks, min_attn_db=self._min_attn_db, max_attn_db=self._max_attn_db, device=self._device)
@@ -326,9 +326,110 @@ class trainer:
         self._ac.load_state_dict(torch.load(path / 'ac.pt')) 
 
 
+    def train_bc(self, use_wandb=False, save_model=True):
+        if use_wandb:
+            wandb.init(project='OFDM_resource_allocation_IL', config=self._config)
+            wandb.define_metric("train/step")
+            wandb.define_metric("train/*", step_metric="train/step")
+            wandb.define_metric("evaluate/*")
+            if not save_model:
+                wandb.watch((self._ac), log="all")
+
+        ac_optimizer = torch.optim.Adam(
+            [p for p in self._ac.parameters() if p.requires_grad],
+            lr=self._ac_lr
+        )
+        
+        tabu = TabuSearch(
+            self._sim.data_dir,
+            self._config['sim.tx_power_range'],
+            self._sim.max_bs_power,
+            noise_spectral_density=-174.0,
+            alpha=0.0,
+            tabu_move_selection_prob=0.01,
+            tabu_max_iterations=500,
+            tabu_tenure=100,
+            gpu=True
+        )
+
+        train_step = 0
+        il_epochs = self._config.get('train.il_epochs', 20)
+
+        for epoch in range(il_epochs):
+            torch.cuda.empty_cache()
+
+            networks = self._sim.get_networks(num_networks=self._eval_batch_size)
+            g = self._sim.generate_pyg(networks, min_attn_db=self._min_attn_db, max_attn_db=self._max_attn_db, device=self._device)
+            g2 = self.quantize_power_attn(g)
+
+            ts_power, ts_beam, ts_action = [], [], []
+
+            for i in range(len(networks)):
+                power, beam, action = tabu.solve_bc(networks[i])  # assume shape: [T, ...]
+                ts_power.append(torch.tensor(np.array(power)))  # shape: [T, L, RB]
+                ts_beam.append(torch.tensor(np.array(beam)))    # shape: [T, L, RB]
+                ts_action.append(torch.tensor(np.array(action)).unsqueeze(1))  # shape: [T, 4]
+
+            ts_power = torch.cat(ts_power, dim=1)  # [T, batch, L, RB]
+            ts_beam = torch.cat(ts_beam, dim=1)
+            ts_action = torch.cat(ts_action, dim=1)  # [T, batch, 4]
+            total_step = ts_power.shape[0]
+
+            total_loss = 0.0
+            self._ac.train()
+            step_indices = torch.randperm(total_step)
+
+            for t in step_indices:
+                power_t = ts_power[t].to(torch.long).to(self._device)
+                beam_t = ts_beam[t].to(torch.long).to(self._device)
+                action_t = ts_action[t].to(torch.long).to(self._device)  # [batch, 4]
+
+                power_alloc = F.one_hot(power_t, num_classes=self._num_power_level).float()
+                beam_alloc = F.one_hot(beam_t, num_classes=self._num_beam).float()
+
+                act_dist, _ = self._ac(
+                    power_alloc=power_alloc,
+                    beam_alloc=beam_alloc,
+                    node_power_attn=g2.x,
+                    edge_power_attn=g2.edge_attr,
+                    edge_index=g2.edge_index,
+                    ptr=g2.ptr,
+                    batch=g2.batch
+                )
+
+                log_probs = act_dist.log_prob(action_t)  # [batch]
+                loss = -torch.mean(log_probs)
+
+                ac_optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self._ac.parameters(), self._clip_max_norm)
+                ac_optimizer.step()
+
+                total_loss += loss.item()
+                train_step += 1
+
+                if use_wandb:
+                    wandb.log({"train/step": train_step, "train/il_loss": loss.item()})
+
+            print(f"[Epoch {epoch+1}] IL avg loss: {total_loss / total_step:.4f}")
+
+            if use_wandb:
+                wandb.log({"train/step": train_step, "train/il_loss": total_loss / total_step})
+
+            if epoch % self._eval_period == 0:
+                self.evaluate(use_wandb)
+                if save_model:
+                    self.save_model(use_wandb=False)
+
+
+
 if __name__ == '__main__':
     device = 'cuda:0'
     tn = trainer(params_file='config.yaml', device=device)
-    tn.train(use_wandb=False, save_model=True)
+    #tn.load_model()
+    #tn.train(use_wandb=False, save_model=True)
     #tn.evaluate()
+    tn.train_bc(use_wandb=True, save_model=True)
+    tn.load_model()
+    tn.train(use_wandb=True, save_model=True)
     print(1)

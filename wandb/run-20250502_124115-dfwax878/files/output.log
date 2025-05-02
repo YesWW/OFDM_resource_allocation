@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\trainer.py", line 432, in <module>
+    tn.train_bc(use_wandb=True, save_model=True)
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\trainer.py", line 400, in train_bc
+    log_probs = act_dist.log_prob(action_t)  # [batch]
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\model.py", line 114, in log_prob
+    node, rb, power, beam = a
+    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\_tensor.py", line 1047, in __iter__
+    raise TypeError("iteration over a 0-d tensor")
+TypeError: iteration over a 0-d tensor

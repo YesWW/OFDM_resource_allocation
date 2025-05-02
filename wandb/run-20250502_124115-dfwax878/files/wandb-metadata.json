@@ -1,0 +1,53 @@
+{
+    "os": "Windows-11-10.0.26100-SP0",
+    "python": "3.12.3",
+    "heartbeatAt": "2025-05-02T03:41:16.611590",
+    "startedAt": "2025-05-02T03:41:15.852874",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "C:\\Users\\daopr\\Desktop\\OFDM\\OFDM_resource_allocation\\trainer.py",
+    "codePathLocal": "trainer.py",
+    "codePath": "trainer.py",
+    "git": {
+        "remote": "https://github.com/YesWW/OFDM_resource_allocation.git",
+        "commit": "5d3c1bbf7d2b3d5963e01d016e7eb198eb98ab32"
+    },
+    "email": "daoproject123@gmail.com",
+    "root": "C:/Users/daopr/Desktop/OFDM/OFDM_resource_allocation",
+    "host": "wonwoo",
+    "username": "daopr",
+    "executable": "C:\\Users\\daopr\\anaconda3\\envs\\hanwha\\python.exe",
+    "cpu_count": 8,
+    "cpu_count_logical": 16,
+    "cpu_freq": {
+        "current": 3801.0,
+        "min": 0.0,
+        "max": 3801.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 3801.0,
+            "min": 0.0,
+            "max": 3801.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 930.6210899353027,
+            "used": 418.45842361450195
+        }
+    },
+    "gpu": "NVIDIA GeForce RTX 4080 SUPER",
+    "gpu_count": 1,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA GeForce RTX 4080 SUPER",
+            "memory_total": 17171480576
+        }
+    ],
+    "memory": {
+        "total": 63.14670944213867
+    }
+}

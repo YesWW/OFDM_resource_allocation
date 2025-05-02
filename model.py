@@ -8,10 +8,10 @@ from torch_geometric.nn import TransformerConv
 from torch_geometric.nn.pool import global_mean_pool
 
 class AC(nn.Module):
-    def __init__(self, num_power_level, num_rb, num_beam, power_attn_num_level, model_params, device):
+    def __init__(self, num_power, num_rb, num_beam, power_attn_num_level, model_params, device):
         super(AC, self).__init__()
         self._device = device
-        self._num_power_level = num_power_level
+        self._num_power = num_power
         self._num_rb = num_rb
         self._num_beam = num_beam
         self._power_attn_num_level = power_attn_num_level
@@ -22,7 +22,7 @@ class AC(nn.Module):
         self._dropout = model_params['dropout']
 
         self._graph_transformer = GraphTransformer(
-            input_dim=(self._num_power_level + self._num_beam) * self._num_rb,
+            input_dim=(self._num_power + self._num_beam) * self._num_rb,
             embedding_dim=self._power_attn_num_level * self._num_rb * self._num_beam,
             num_layers=self._num_layers, d_model=self._d_model, n_head=self._n_head,
             edge_dim=self._power_attn_num_level * self._num_rb * self._num_beam,
@@ -30,7 +30,7 @@ class AC(nn.Module):
             activation="relu", device=self._device
         )
 
-        self._actor_linear = Linear(self._d_model, self._num_rb * self._num_beam, device=device)
+        self._actor_linear = Linear(self._d_model, num_rb * num_power * num_beam, device=device)
         self._critic_linear = Linear(self._d_model, 1, device=device)
 
         self._reset_parameters()
@@ -51,10 +51,10 @@ class AC(nn.Module):
         value = self._critic_linear(value)[:, 0]
 
         logit = self._actor_linear(x)
-        logit = logit.reshape(power_alloc.size(0), self._num_rb, self._num_beam)
+        logit = logit.reshape(power_alloc.size(0), self._num_rb, self._num_power, self._num_beam)
 
-        unterminated_mask = ~(power_alloc[:, :, -1] == 1)
-        logit = torch.where(condition=unterminated_mask.unsqueeze(2), input=logit, other=-torch.inf)
+        # unterminated_mask = ~(power_alloc[:, :, -1] == 1)
+        # logit = torch.where(condition=unterminated_mask.unsqueeze(2).unsqueeze(3), input=logit, other=-torch.inf)
 
         
         #logit[terminated_mask] = -torch.inf
@@ -64,11 +64,14 @@ class AC(nn.Module):
 
 class ActDist:
     def __init__(self, logit, ptr, device):
+        self._logit = logit
         self._device = device
         self._ptr = ptr
         self._batch_size = int(ptr.shape[0]) - 1
         self._num_rb = logit.size(1)
-        self._num_beam = logit.size(2)
+        self._num_power = logit.size(2)
+        self._num_beam = logit.size(3)
+        
         self._dist_list = []
         for idx in range(self._batch_size):
             l = logit[ptr[idx]: ptr[idx + 1], :, :].to(self._device)
@@ -84,13 +87,15 @@ class ActDist:
         for dist in self._dist_list:
             if dist is not None:
                 idx = int(dist.sample())
-                node = idx // (self._num_rb * self._num_beam)
-                rbb = idx % (self._num_rb * self._num_beam)
-                rb = rbb // self._num_beam
-                beam = rbb % self._num_beam
+                node = idx // (self._num_rb * self._num_power * self._num_beam)
+                rbpb = idx % (self._num_rb * self._num_power * self._num_beam)
+                rb = rbpb // (self._num_power * self._num_beam)
+                pb = rbpb % (self._num_power * self._num_beam)
+                power = pb // self._num_power
+                beam = pb % self._num_beam
             else:
-                node, rb, beam = -1, -1, -1
-            action.append([node, rb, beam])
+                node, rb, power, beam = -1, -1, -1, -1
+            action.append([node, rb, power, beam])
         action = torch.Tensor(action).to(torch.int).to(self._device)
         return action
 
@@ -106,8 +111,8 @@ class ActDist:
         lp = []
         for a, dist in zip(action, self._dist_list):
             if dist is not None:
-                node, rb, beam = a
-                idx = node * self._num_rb * self._num_beam + rb * self._num_beam + beam
+                node, rb, power, beam = a
+                idx = node * self._num_rb * self._num_power * self._num_beam + rb * self._num_power * self._num_beam + power * self._num_beam + beam
                 lp.append(dist.log_prob(idx))
             else:
                 lp.append(torch.tensor(-torch.inf).to(self._device))
