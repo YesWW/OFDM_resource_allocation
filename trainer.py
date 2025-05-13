@@ -78,6 +78,16 @@ class trainer:
             self._eval_data = self._sim.generate_pyg(self._eval_networks, min_attn_db=self._min_attn_db,
                                                       max_attn_db=self._max_attn_db, device=self._device)
 
+            self._tabu = TabuSearch(
+                self._sim.data_dir,
+                self._config['sim.tx_power_range'],
+                self._sim.max_bs_power,
+                noise_spectral_density=-174.0,
+                alpha=0.0,
+                tabu_move_selection_prob=0.01,
+                tabu_max_iterations=200,
+                tabu_tenure=100,
+                gpu=True)
 
     def quantize_power_attn(self, g):
         '''Quantize the continous data graphs into a discrete data 
@@ -329,97 +339,75 @@ class trainer:
     def train_bc(self, use_wandb=False, save_model=True):
         if use_wandb:
             wandb.init(project='OFDM_resource_allocation_IL', config=self._config)
-            wandb.define_metric("train/step")
-            wandb.define_metric("train/*", step_metric="train/step")
-            wandb.define_metric("evaluate/*")
-            if not save_model:
-                wandb.watch((self._ac), log="all")
-
+            ...
+            
         ac_optimizer = torch.optim.Adam(
             [p for p in self._ac.parameters() if p.requires_grad],
             lr=self._ac_lr
         )
-        
-        tabu = TabuSearch(
-            self._sim.data_dir,
-            self._config['sim.tx_power_range'],
-            self._sim.max_bs_power,
-            noise_spectral_density=-174.0,
-            alpha=0.0,
-            tabu_move_selection_prob=0.01,
-            tabu_max_iterations=500,
-            tabu_tenure=100,
-            gpu=True
-        )
 
         train_step = 0
         il_epochs = self._config.get('train.il_epochs', 20)
+        il_repeat = 1000  # 🔁 반복 횟수 설정
 
-        for epoch in range(il_epochs):
-            torch.cuda.empty_cache()
+        for repeat_idx in range(il_repeat):
+            print(f"\n=== IL Repeat {repeat_idx+1}/{il_repeat} ===")
 
-            networks = self._sim.get_networks(num_networks=self._eval_batch_size)
-            g = self._sim.generate_pyg(networks, min_attn_db=self._min_attn_db, max_attn_db=self._max_attn_db, device=self._device)
+            # 1. 샘플링 & 그래프 생성
+            networks = self._sim.get_networks(num_networks=self._rollout_batch_size)
+            g = self._sim.generate_pyg(networks, min_attn_db=self._min_attn_db,
+                                    max_attn_db=self._max_attn_db, device=self._device)
             g2 = self.quantize_power_attn(g)
 
-            ts_power, ts_beam, ts_action = [], [], []
+            # 2. expert solution 생성
+            allocs = []
+            for net in networks:
+                sol = self._tabu.solve_bc(net)
+                power = torch.tensor(sol['power_level'])
+                beam  = torch.tensor(sol['beam_index'])
+                joint = (power * self._num_beam + beam)
+                allocs.append(joint)
+            target_joint = torch.cat(allocs, dim=0).float().to(self._device)
+            target_joint = F.one_hot(target_joint.long(), num_classes=self._num_power_level*self._num_beam).view(-1, self._num_power_level * self._num_beam).float()
+            # 3. 초기 상태 설정
+            num_nodes = g2.x.size(0)
+            power_alloc = torch.zeros((num_nodes, self._num_rb, self._num_power_level), device=self._device)
+            beam_alloc  = torch.zeros((num_nodes, self._num_rb, self._num_beam), device=self._device)
+            power_alloc[:, :, 0] = 1
+            beam_alloc[:, :, 0] = 1
 
-            for i in range(len(networks)):
-                power, beam, action = tabu.solve_bc(networks[i])  # assume shape: [T, ...]
-                ts_power.append(torch.tensor(np.array(power)))  # shape: [T, L, RB]
-                ts_beam.append(torch.tensor(np.array(beam)))    # shape: [T, L, RB]
-                ts_action.append(torch.tensor(np.array(action)).unsqueeze(1))  # shape: [T, 4]
-
-            ts_power = torch.cat(ts_power, dim=1)  # [T, batch, L, RB]
-            ts_beam = torch.cat(ts_beam, dim=1)
-            ts_action = torch.cat(ts_action, dim=1)  # [T, batch, 4]
-            total_step = ts_power.shape[0]
-
-            total_loss = 0.0
-            self._ac.train()
-            step_indices = torch.randperm(total_step)
-
-            for t in step_indices:
-                power_t = ts_power[t].to(torch.long).to(self._device)
-                beam_t = ts_beam[t].to(torch.long).to(self._device)
-                action_t = ts_action[t].to(torch.long).to(self._device)  # [batch, 4]
-
-                power_alloc = F.one_hot(power_t, num_classes=self._num_power_level).float()
-                beam_alloc = F.one_hot(beam_t, num_classes=self._num_beam).float()
+            # 4. il_epochs 동안 반복 학습
+            for epoch in range(il_epochs):
+                self._ac.train()
+                torch.cuda.empty_cache()
 
                 act_dist, _ = self._ac(
-                    power_alloc=power_alloc,
-                    beam_alloc=beam_alloc,
-                    node_power_attn=g2.x,
-                    edge_power_attn=g2.edge_attr,
-                    edge_index=g2.edge_index,
-                    ptr=g2.ptr,
-                    batch=g2.batch
+                    power_alloc, beam_alloc,
+                    node_power_attn=g2.x, edge_power_attn=g2.edge_attr,
+                    edge_index=g2.edge_index, ptr=g2.ptr, batch=g2.batch
                 )
+                logit = act_dist._logit  # [N, R, P, B]
+                logit_flat = logit.view(-1, self._num_power_level * self._num_beam)
 
-                log_probs = act_dist.log_prob(action_t)  # [batch]
-                loss = -torch.mean(log_probs)
+                loss = F.cross_entropy(logit_flat, target_joint)
 
                 ac_optimizer.zero_grad()
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self._ac.parameters(), self._clip_max_norm)
                 ac_optimizer.step()
 
-                total_loss += loss.item()
+                print(f"[Repeat {repeat_idx+1}, Epoch {epoch+1}] BC loss: {loss.item():.4f}")
                 train_step += 1
 
                 if use_wandb:
                     wandb.log({"train/step": train_step, "train/il_loss": loss.item()})
 
-            print(f"[Epoch {epoch+1}] IL avg loss: {total_loss / total_step:.4f}")
-
-            if use_wandb:
-                wandb.log({"train/step": train_step, "train/il_loss": total_loss / total_step})
-
-            if epoch % self._eval_period == 0:
+            # 반복 종료 시 평가/모델 저장
+            if repeat_idx % self._eval_period == 0:
                 self.evaluate(use_wandb)
                 if save_model:
-                    self.save_model(use_wandb=False)
+                    self.save_model(use_wandb)
+
 
 
 
@@ -429,7 +417,8 @@ if __name__ == '__main__':
     #tn.load_model()
     #tn.train(use_wandb=False, save_model=True)
     #tn.evaluate()
+    #tn.train_bc(use_wandb=False, save_model=True)
+    #tn.load_model()
     tn.train_bc(use_wandb=True, save_model=True)
-    tn.load_model()
     tn.train(use_wandb=True, save_model=True)
     print(1)

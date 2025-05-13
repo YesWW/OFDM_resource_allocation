@@ -1,0 +1,12 @@
+
+=== IL Repeat 1/1000 ===
+Traceback (most recent call last):
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\trainer.py", line 422, in <module>
+    tn.train_bc(use_wandb=True, save_model=True)
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\trainer.py", line 392, in train_bc
+    loss = F.cross_entropy(logit_flat, target_joint)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\nn\functional.py", line 3086, in cross_entropy
+    return torch._C._nn.cross_entropy_loss(input, target, weight, _Reduction.get_enum(reduction), ignore_index, label_smoothing)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: "nll_loss_forward_reduce_cuda_kernel_2d_index" not implemented for 'Int'

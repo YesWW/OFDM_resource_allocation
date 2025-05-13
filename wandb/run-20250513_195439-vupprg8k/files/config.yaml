@@ -1,0 +1,159 @@
+wandb_version: 1
+
+sim.data_dir:
+  desc: null
+  value: myeongdong_arr_4_rb_16
+sim.tx_power_range:
+  desc: null
+  value:
+    max_power: 2
+    num_power_level: 4
+sim.max_bs_power:
+  desc: null
+  value: 10
+sim.noise_spectral_density:
+  desc: null
+  value: -174.0
+sim.alpha:
+  desc: null
+  value: 0.0
+sim.num_ue_range:
+  desc: null
+  value:
+  - 20
+  - 40
+sim.gpu:
+  desc: null
+  value: true
+power_attn.min:
+  desc: null
+  value: -200
+power_attn.max:
+  desc: null
+  value: 0
+model.d_model:
+  desc: null
+  value: 128
+model.n_head:
+  desc: null
+  value: 4
+model.dim_feedforward:
+  desc: null
+  value: 256
+model.actor_num_layers:
+  desc: null
+  value: 6
+model.critic_num_layers:
+  desc: null
+  value: 6
+model.dropout:
+  desc: null
+  value: 0.0
+train.num_action_iter:
+  desc: null
+  value: 100
+train.num_graph_repeat:
+  desc: null
+  value: 10000
+train.train_dataset:
+  desc: null
+  value: train_OFDM
+train.eval_dataset:
+  desc: null
+  value: test_OFDM
+train.il_trajectory_path:
+  desc: null
+  value: expert_dataset
+train.graph_batch_size:
+  desc: null
+  value: 64
+train.gamma:
+  desc: null
+  value: 0.99
+train.lambda:
+  desc: null
+  value: 0.9
+train.buffer_batch_size:
+  desc: null
+  value: 128
+train.ac_lr:
+  desc: null
+  value: 0.0003
+train.rollout_batch_size:
+  desc: null
+  value: 16
+train.min_attn_db:
+  desc: null
+  value: -200
+train.max_attn_db:
+  desc: null
+  value: -50
+train.power_attn.num_level:
+  desc: null
+  value: 151
+train.num_rb:
+  desc: null
+  value: 16
+train.num_antenna:
+  desc: null
+  value: 4
+train.entropy_loss_weight:
+  desc: null
+  value: 0.1
+train.value_loss_weight:
+  desc: null
+  value: 0.5
+train.clip_max_norm:
+  desc: null
+  value: 0.01
+train.num_train_iter:
+  desc: null
+  value: 1
+train.PPO_clip:
+  desc: null
+  value: 0.2
+train.act_prob_ratio_exponent_clip:
+  desc: null
+  value: 10.0
+train.eval_period:
+  desc: null
+  value: 3
+train.eval_batch_size:
+  desc: null
+  value: 5
+train.il_epochs:
+  desc: null
+  value: 20
+_wandb:
+  desc: null
+  value:
+    python_version: 3.12.3
+    cli_version: 0.17.0
+    framework: huggingface
+    huggingface_version: 4.44.2
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1747133679
+    t:
+      1:
+      - 1
+      - 11
+      - 49
+      - 55
+      - 77
+      2:
+      - 1
+      - 11
+      - 49
+      - 55
+      - 77
+      3:
+      - 16
+      - 23
+      4: 3.12.3
+      5: 0.17.0
+      6: 4.44.2
+      8:
+      - 3
+      - 5
+      13: windows-amd64

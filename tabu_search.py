@@ -98,9 +98,6 @@ class TabuSearch:
         return cand_moves, cand_solutions
 
     def solve_bc(self, network):
-        power = []
-        beam = []
-        action = []
         ch = network['ch']
         num_link = ch.shape[0]
         tabu_list = {}
@@ -120,16 +117,11 @@ class TabuSearch:
                         best_solution, best_perf = cand_solution, cand_perf
             if selected_solution is None:
                 break
-            power.append(selected_solution['power_level'])
-            beam.append(selected_solution['beam_index'])
-            action.append(selected_move)
-
             cur_solution = selected_solution
             tabu_list[selected_move] = self._tabu_tenure
             tabu_list = {move:(tenure - 1) for move, tenure in tabu_list.items() if tenure > 1}
 
-
-        return power, beam, action
+        return best_solution
 
 if __name__ == '__main__':
     data_dir = 'myeongdong_arr_4_rb_16'

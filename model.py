@@ -52,13 +52,6 @@ class AC(nn.Module):
 
         logit = self._actor_linear(x)
         logit = logit.reshape(power_alloc.size(0), self._num_rb, self._num_power, self._num_beam)
-
-        # unterminated_mask = ~(power_alloc[:, :, -1] == 1)
-        # logit = torch.where(condition=unterminated_mask.unsqueeze(2).unsqueeze(3), input=logit, other=-torch.inf)
-
-        
-        #logit[terminated_mask] = -torch.inf
-
         act_dist = ActDist(logit, ptr, device=self._device)
         return act_dist, value
 

@@ -1,0 +1,1 @@
+{"train/step": 20, "train/il_loss": 0.34803029894828796, "_timestamp": 1747125328.862311, "_runtime": 1446.5764338970184, "_step": 26, "evaluate/reward": 26.463388442993164, "evaluate/target": 26.463388442993164, "_wandb": {"runtime": 1445}}
