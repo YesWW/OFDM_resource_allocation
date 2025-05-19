@@ -120,7 +120,8 @@ class trainer:
         beam_alloc = torch.zeros(size=(num_node, self._num_rb, self._num_beam)).to(self._device)
         link_rb_idx = self.get_order(g) # [batch, link*rb, 2]
         g2 = self.quantize_power_attn(g)
-        #power_alloc[:,:,0] = 1
+        # power_alloc[:,:,0] = 1
+        # beam_alloc[:,:,0] = 1
         unterminated_node = torch.full(size=(num_node, self._num_rb), fill_value=True).to(self._device)
         ongoing = torch.full(size=(batch_size,), fill_value=True).to(self._device)
 
@@ -154,29 +155,29 @@ class trainer:
                 target = []
                 # update resource allocation
                 for idx, act in enumerate(action):
-                    if ongoing[idx]:
-                        power, beam = act//self._num_beam, act%self._num_beam
-                        ptr_link = ptr[idx] + link_rb[idx][0]
-                        rb = link_rb[idx][1]
 
-                        link_power_level = torch.nonzero(power_alloc[ptr_link][rb])
-                        power_alloc[ptr_link][rb][link_power_level] = 0
-                        power_alloc[ptr_link][rb][link_power_level+1] = 1
-                        
-                        link_beam_index = torch.nonzero(beam_alloc[ptr_link][rb])
-                        if link_beam_index.numel() != 0:
-                            beam_alloc[ptr_link][rb][link_beam_index] = 0
-                        beam_alloc[ptr_link][rb][beam] = 1
+                    power, beam = act//self._num_beam, act%self._num_beam
+                    ptr_link = ptr[idx] + link_rb[idx][0]
+                    rb = link_rb[idx][1]
 
-                        power_solution = torch.argmax(power_alloc[ptr[idx]:ptr[idx+1],:], dim=-1).cpu().numpy()
-                        beam_solution = torch.argmax(beam_alloc[ptr[idx]:ptr[idx+1],:], dim=-1).cpu().numpy()
-                        solution = {'power_level' : power_solution, 'beam_index' : beam_solution}
-                        is_feasible = self._sim.is_solution_feasible(networks[idx], solution)
-                        target_score = float(self._sim.get_optimization_target(networks[idx], solution))
-                        val = torch.tensor(bool(is_feasible), dtype=torch.bool, device=self._device)
-                        ongoing[idx] = val
-                    else:
-                        target_score = 0
+                    # link_power_level = torch.nonzero(power_alloc[ptr_link][rb])
+                    # power_alloc[ptr_link][rb][link_power_level] = 0
+                    # power_alloc[ptr_link][rb][link_power_level+1] = 1
+                    power_alloc[ptr_link][rb][power] = 1
+                    
+                    # link_beam_index = torch.nonzero(beam_alloc[ptr_link][rb])
+                    # if link_beam_index.numel() != 0:
+                    #     beam_alloc[ptr_link][rb][link_beam_index] = 0
+                    beam_alloc[ptr_link][rb][beam] = 1
+
+                    power_solution = torch.argmax(power_alloc[ptr[idx]:ptr[idx+1],:], dim=-1).cpu().numpy()
+                    beam_solution = torch.argmax(beam_alloc[ptr[idx]:ptr[idx+1],:], dim=-1).cpu().numpy()
+                    solution = {'power_level' : power_solution, 'beam_index' : beam_solution}
+                    is_feasible = self._sim.is_solution_feasible(networks[idx], solution)
+                    target_score = float(self._sim.get_optimization_target(networks[idx], solution))
+                    val = torch.tensor(bool(is_feasible), dtype=torch.bool, device=self._device)
+                    ongoing[idx] = val
+
                     target.append(target_score)
                 target_buf.append(torch.Tensor(target))
         # store all of the interactions
