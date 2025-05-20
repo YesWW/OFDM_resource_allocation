@@ -34,13 +34,14 @@ class OFDMSimulator:
         self._gpu = gpu
 
     def get_networks(self, num_networks):
+        num_ue = np.random.randint(low=self.num_ue_range[0], high=self.num_ue_range[1])
         networks = []
         for _ in range(num_networks):
-            networks.append(self.get_network())
+            networks.append(self.get_network(num_ue))
         return networks
 
-    def get_network(self):
-        num_ue = np.random.randint(low=self.num_ue_range[0], high=self.num_ue_range[1])
+    def get_network(self, num_ue):
+        #num_ue = np.random.randint(low=self.num_ue_range[0], high=self.num_ue_range[1])
         file_list = np.random.choice(self.file_list, size=num_ue, replace=False)
         ch, pos = [], []
         for file in file_list:
@@ -250,8 +251,3 @@ if __name__ == '__main__':
     # network = net.get_evaluation_network(eval_file_list[0])
     # net.plot(network)
     # pass
-
-
-
-
-

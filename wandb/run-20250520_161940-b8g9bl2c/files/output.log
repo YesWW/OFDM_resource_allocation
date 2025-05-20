@@ -1,0 +1,92 @@
+
+=== IL Repeat 1/1000 ===
+[Repeat 1, Epoch 1] BC loss: 4.5587
+[Repeat 1, Epoch 2] BC loss: 2.4689
+[Repeat 1, Epoch 3] BC loss: 1.9370
+[Repeat 1, Epoch 4] BC loss: 1.5647
+[Repeat 1, Epoch 5] BC loss: 1.2893
+[Repeat 1, Epoch 6] BC loss: 0.9963
+[Repeat 1, Epoch 7] BC loss: 0.6913
+[Repeat 1, Epoch 8] BC loss: 0.4923
+[Repeat 1, Epoch 9] BC loss: 0.3258
+[Repeat 1, Epoch 10] BC loss: 0.2110
+[Repeat 1, Epoch 11] BC loss: 0.1301
+[Repeat 1, Epoch 12] BC loss: 0.0732
+[Repeat 1, Epoch 13] BC loss: 0.0416
+[Repeat 1, Epoch 14] BC loss: 0.0225
+[Repeat 1, Epoch 15] BC loss: 0.0126
+[Repeat 1, Epoch 16] BC loss: 0.0070
+[Repeat 1, Epoch 17] BC loss: 0.0039
+[Repeat 1, Epoch 18] BC loss: 0.0023
+[Repeat 1, Epoch 19] BC loss: 0.0013
+[Repeat 1, Epoch 20] BC loss: 0.0008
+[Repeat 1, Epoch 21] BC loss: 0.0005
+[Repeat 1, Epoch 22] BC loss: 0.0003
+[Repeat 1, Epoch 23] BC loss: 0.0002
+[Repeat 1, Epoch 24] BC loss: 0.0002
+[Repeat 1, Epoch 25] BC loss: 0.0001
+[Repeat 1, Epoch 26] BC loss: 0.0001
+[Repeat 1, Epoch 27] BC loss: 0.0001
+[Repeat 1, Epoch 28] BC loss: 0.0001
+[Repeat 1, Epoch 29] BC loss: 0.0001
+[Repeat 1, Epoch 30] BC loss: 0.0001
+[Repeat 1, Epoch 31] BC loss: 0.0001
+[Repeat 1, Epoch 32] BC loss: 0.0001
+[Repeat 1, Epoch 33] BC loss: 0.0000
+[Repeat 1, Epoch 34] BC loss: 0.0000
+[Repeat 1, Epoch 35] BC loss: 0.0000
+[Repeat 1, Epoch 36] BC loss: 0.0000
+[Repeat 1, Epoch 37] BC loss: 0.0000
+[Repeat 1, Epoch 38] BC loss: 0.0000
+Traceback (most recent call last):
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\trainer.py", line 444, in <module>
+    tn.train_bc(use_wandb=True, save_model=True)
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\trainer.py", line 392, in train_bc
+    _, _, _, _, logit = self._ac(
+                        ^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\nn\modules\module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\nn\modules\module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\model.py", line 50, in forward
+    x = self._graph_transformer(input=resource_alloc, node_embedding=node_power_attn,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\nn\modules\module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\nn\modules\module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\model.py", line 162, in forward
+    x = layer(x, edge_attr, edge_index)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\nn\modules\module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\nn\modules\module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\model.py", line 214, in forward
+    x2 = self._trans_conv(x=x, edge_index=edge_index.long(), edge_attr=edge_attr, return_attention_weights=None)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\nn\modules\module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\nn\modules\module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch_geometric\nn\conv\transformer_conv.py", line 241, in forward
+    x_r = self.lin_skip(x[1])
+          ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\nn\modules\module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch\nn\modules\module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\daopr\anaconda3\envs\hanwha\Lib\site-packages\torch_geometric\nn\dense\linear.py", line 147, in forward
+    return F.linear(x, self.weight, self.bias)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

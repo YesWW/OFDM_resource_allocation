@@ -4,7 +4,7 @@ from torch_geometric.data import Batch
 import numpy as np
 
 class Buffer:
-    def __init__(self, graph, power_alloc, beam_alloc, action, act_log_prob, value, ongoing, target, device):
+    def __init__(self, graph, power_alloc, beam_alloc, action, act_log_prob, value, ongoing, target, link_rb, device):
         self._device = device
         self._ptr = graph['ptr']
         self._graph_list = graph.to_data_list()
@@ -16,6 +16,7 @@ class Buffer:
         self._value = value
         self._ongoing = ongoing
         self._target = target
+        self._link_rb = link_rb
 
         self._reward = None
         self._return = None
@@ -34,10 +35,11 @@ class Buffer:
         out['graph'] = self._graph_list[samp].to(self._device)
         out['power_alloc'] = self._power_alloc[step, self._ptr[samp]: self._ptr[samp+1], :, :].to(self._device)
         out['beam_alloc'] = self._beam_alloc[step, self._ptr[samp]: self._ptr[samp+1], :, :].to(self._device)
-        out['action'] = self._action[step, samp, :].to(self._device)
+        out['action'] = self._action[step, samp].to(self._device)
         out['act_log_prob'] = self._act_log_prob[step, samp].to(self._device)
         out['value'] = self._value[step, samp].to(self._device)
         out['ongoing'] = self._ongoing[step, samp].to(self._device)
+        out['link_rb'] = self._link_rb[step, samp].to(self._device)
         if self._reward is not None:
             out['reward'] = self._reward[step, samp].to(self._device)
         if self._return is not None:
@@ -45,11 +47,11 @@ class Buffer:
         return out
 
     def cal_reward(self):
-        # self._reward = torch.zeros_like(self._target)
-        # self._reward[1:] = self._target[1:] - self._target[:-1]
-        # self._reward[0] = torch.zeros_like(self._reward[0])
+        self._reward = torch.zeros_like(self._target)
+        self._reward[1:] = self._target[1:] - self._target[:-1]
+        self._reward[0] = torch.zeros_like(self._reward[0])
         #self._reward *= 100
-        self._reward = self._target.clone()
+        #self._reward = self._target.clone()
 
     def get_performance(self):
         return self._reward
@@ -80,6 +82,7 @@ def collate_fn(samp):
     out['act_log_prob'] = torch.stack(out['act_log_prob'], dim=0)
     out['value'] = torch.stack(out['value'], dim=0)
     out['ongoing'] = torch.stack(out['ongoing'], dim=0)
+    out['link_rb'] = torch.stack(out['link_rb'], dim=0)
     if 'reward' in keys:
         out['reward'] = torch.stack(out['reward'], dim=0)
     if 'return' in keys:

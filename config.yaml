@@ -53,4 +53,4 @@ train.act_prob_ratio_exponent_clip: 10.0
 train.eval_period: 3
 train.eval_batch_size: 5  # Controls how many eval batch size are in the data
 
-train.il_epochs: 500
+train.il_epochs: 20

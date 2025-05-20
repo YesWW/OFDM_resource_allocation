@@ -30,7 +30,8 @@ class AC(nn.Module):
             activation="relu", device=self._device
         )
 
-        self._actor_linear = Linear(self._d_model, num_rb * num_power * num_beam, device=device)
+        self._rb_emb = nn.Embedding(num_embeddings=num_rb, embedding_dim=self._d_model).to(device)
+        self._actor_linear = Linear(3*self._d_model, num_power * num_beam, device=device)
         self._critic_linear = Linear(self._d_model, 1, device=device)
 
         self._reset_parameters()
@@ -41,19 +42,26 @@ class AC(nn.Module):
         nn.init.xavier_uniform_(self._critic_linear.weight)
         nn.init.constant_(self._critic_linear.bias, 0.)
 
-    def forward(self, power_alloc, beam_alloc, node_power_attn, edge_power_attn, edge_index, ptr, batch):
+    def forward(self, power_alloc, beam_alloc, node_power_attn, edge_power_attn, edge_index, ptr, batch, link_rb):
         resource_alloc = torch.cat([power_alloc, beam_alloc], dim=2).reshape(power_alloc.size(0), -1)
         node_power_attn = node_power_attn.reshape(node_power_attn.size(0), -1)
         edge_power_attn = edge_power_attn.reshape(edge_power_attn.size(0), -1)
+
         x = self._graph_transformer(input=resource_alloc, node_embedding=node_power_attn,
                                     edge_attr=edge_power_attn, edge_index=edge_index)
-        value = global_mean_pool(x=x, batch=batch)
-        value = self._critic_linear(value)[:, 0]
+        
+        global_mean = global_mean_pool(x=x, batch=batch)
+        value = self._critic_linear(global_mean)[:, 0]
+        link_emb = x[link_rb[:,0]]
+        rb_emb = self._rb_emb(link_rb[:,1])
+        x = torch.cat([global_mean, link_emb, rb_emb], dim=1)
+        logit = self._actor_linear(x)   # [batch, power*beam]
+        dist = Categorical(logits=logit)
+        action = dist.sample()
+        log_probs = dist.log_prob(action)
+        entropy = dist.entropy()
 
-        logit = self._actor_linear(x)
-        logit = logit.reshape(power_alloc.size(0), self._num_rb, self._num_power, self._num_beam)
-        act_dist = ActDist(logit, ptr, device=self._device)
-        return act_dist, value
+        return action, log_probs, entropy, value, logit
 
 class ActDist:
     def __init__(self, logit, ptr, device):

@@ -15,6 +15,7 @@ from utility import Buffer, get_buffer_dataloader
 import wandb
 import time
 from tabu_search import TabuSearch
+from torch_scatter import scatter_add
 
 
 class trainer:
@@ -127,11 +128,11 @@ class trainer:
         batch_size = int(ptr.shape[0]) - 1
         power_alloc = torch.zeros(size=(num_node, self._num_rb, self._num_power_level)).to(self._device)
         beam_alloc = torch.zeros(size=(num_node, self._num_rb, self._num_beam)).to(self._device)
-
+        link_rb_idx = self.get_order(g) # [batch, link*rb, 2]
         g2 = self.quantize_power_attn(g)
-        power_alloc[:,:,0] = 1
-        beam_alloc[:,:,0] = 1
-        unterminated_node = torch.full(size=(num_node, self._num_rb), fill_value=True).to(self._device)
+        # power_alloc[:,:,0] = 1
+        # beam_alloc[:,:,0] = 1
+        # unterminated_node = torch.full(size=(num_node, self._num_rb), fill_value=True).to(self._device)
         ongoing = torch.full(size=(batch_size,), fill_value=True).to(self._device)
 
         power_alloc_buf = [] 
@@ -141,14 +142,17 @@ class trainer:
         value_buf = []
         ongoing_buf = []
         target_buf = []
+        link_rb_buf = []
         self._ac.eval()
 
         with torch.no_grad():
-            while torch.any(ongoing):
-                act_dist, value = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc,
-                                           node_power_attn=g2.x, edge_power_attn=g2.edge_attr, edge_index=g2.edge_index, ptr=ptr, batch=batch)
-                action = act_dist.sample()
-                act_log_prob = act_dist.log_prob(action)
+            for i in range(link_rb_idx.size(1)):
+            #while torch.any(ongoing):
+                link_rb = link_rb_idx[:,i,:]
+                action, act_log_prob, _, value, _ = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc,
+                                           node_power_attn=g2.x, edge_power_attn=g2.edge_attr, edge_index=g2.edge_index, ptr=ptr, batch=batch, link_rb=link_rb)
+                # action = act_dist.sample()
+                # act_log_prob = act_dist.log_prob(action)
 
                 power_alloc_buf.append(power_alloc.detach().clone().cpu())
                 beam_alloc_buf.append(beam_alloc.detach().clone().cpu())
@@ -156,32 +160,34 @@ class trainer:
                 act_log_prob_buf.append(act_log_prob.detach().clone().cpu())
                 value_buf.append(value.detach().clone().cpu())
                 ongoing_buf.append(ongoing.detach().clone().cpu())
+                link_rb_buf.append(link_rb.detach().clone().cpu())
 
                 target = []
                 # update resource allocation
                 for idx, act in enumerate(action):
-                    if ongoing[idx]:
-                        link, rb, power, beam = act
-                        ptr_link = ptr[idx] + link
-                        link_power_level = torch.nonzero(power_alloc[ptr_link][rb])
-                        power_alloc[ptr_link][rb][link_power_level] = 0
-                        power_alloc[ptr_link][rb][power] = 1
-                        
-                        link_beam_index = torch.nonzero(beam_alloc[ptr_link][rb])
-                        if link_beam_index.numel() != 0:
-                            beam_alloc[ptr_link][rb][link_beam_index] = 0
-                        beam_alloc[ptr_link][rb][beam] = 1
 
-                        unterminated_node = ~(power_alloc[:,:,-1]==1)
-                        power_solution = torch.argmax(power_alloc[ptr[idx]:ptr[idx+1],:], dim=-1).cpu().numpy()
-                        beam_solution = torch.argmax(beam_alloc[ptr[idx]:ptr[idx+1],:], dim=-1).cpu().numpy()
-                        solution = {'power_level' : power_solution, 'beam_index' : beam_solution}
-                        is_feasible = self._sim.is_solution_feasible(networks[idx], solution)
-                        target_score = float(self._sim.get_optimization_target(networks[idx], solution))
-                        val = torch.any(unterminated_node[ptr[idx]: ptr[idx+1]]) & torch.tensor(bool(is_feasible), dtype=torch.bool, device=self._device)
-                        ongoing[idx] = val
-                    else:
-                        target_score = 0
+                    power, beam = act//self._num_beam, act%self._num_beam
+                    ptr_link = ptr[idx] + link_rb[idx][0]
+                    rb = link_rb[idx][1]
+
+                    # link_power_level = torch.nonzero(power_alloc[ptr_link][rb])
+                    # power_alloc[ptr_link][rb][link_power_level] = 0
+                    # power_alloc[ptr_link][rb][link_power_level+1] = 1
+                    power_alloc[ptr_link][rb][power] = 1
+                    
+                    # link_beam_index = torch.nonzero(beam_alloc[ptr_link][rb])
+                    # if link_beam_index.numel() != 0:
+                    #     beam_alloc[ptr_link][rb][link_beam_index] = 0
+                    beam_alloc[ptr_link][rb][beam] = 1
+
+                    power_solution = torch.argmax(power_alloc[ptr[idx]:ptr[idx+1],:], dim=-1).cpu().numpy()
+                    beam_solution = torch.argmax(beam_alloc[ptr[idx]:ptr[idx+1],:], dim=-1).cpu().numpy()
+                    solution = {'power_level' : power_solution, 'beam_index' : beam_solution}
+                    is_feasible = self._sim.is_solution_feasible(networks[idx], solution)
+                    target_score = float(self._sim.get_optimization_target(networks[idx], solution))
+                    val = torch.tensor(bool(is_feasible), dtype=torch.bool, device=self._device)
+                    ongoing[idx] = val
+
                     target.append(target_score)
                 target_buf.append(torch.Tensor(target))
         # store all of the interactions
@@ -192,15 +198,16 @@ class trainer:
         value_buf = torch.stack(value_buf, dim=0)
         ongoing_buf = torch.stack(ongoing_buf, dim=0)       
         target_buf = torch.stack(target_buf, dim=0)
+        link_rb_buf = torch.stack(link_rb_buf, dim=0)
 
-        buf = Buffer(g2, power_alloc_buf, beam_alloc_buf, action_buf, act_log_prob_buf, value_buf, ongoing_buf, target_buf, device=self._device)
+        buf = Buffer(g2, power_alloc_buf, beam_alloc_buf, action_buf, act_log_prob_buf, value_buf, ongoing_buf, target_buf, link_rb_buf, device=self._device)
         return buf
 
 
     def train(self, use_wandb=False, save_model=True):
         # initialize the wandb
         if use_wandb:
-            wandb.init(project='OFDM_resource_allocation_IL', config=self._config)
+            wandb.init(project='OFDM_resource_allocation', config=self._config)
             wandb.define_metric("train/step")
             wandb.define_metric("train/*", step_metric="train/step")
             wandb.define_metric("evaluate/*")
@@ -213,7 +220,8 @@ class trainer:
         ac_optimizer = torch.optim.Adam(ac_param_dicts, lr=self._ac_lr)
 
         for repeat_idx in range(self._num_graph_repeat):
-            networks = self._sim.get_networks(num_networks=self._rollout_batch_size)
+            #num_ue = np.random.randint(low=self._config['sim.num_ue_range'][0], high=self._config['sim.num_ue_range'][1])
+            networks = self._sim.get_networks(num_networks=self._rollout_batch_size) 
             g = self._sim.generate_pyg(networks=networks, min_attn_db=self._min_attn_db, max_attn_db=self._max_attn_db, device=self._device)
             buf = self.roll_out(g, networks)
             buf.cal_reward()
@@ -226,33 +234,28 @@ class trainer:
                 power_alloc = d['power_alloc']
                 beam_alloc = d['beam_alloc']
                 action = d['action']
+                link_rb = d['link_rb']
                 init_act_log_prob = d['act_log_prob']
                 lambda_return = d['return']                    
                 advantage = lambda_return - d['value']
-                ongoing = d['ongoing']
             
                 # Train actor
-                act_dist, value = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc, 
+                _, act_log_prob, entropy, value = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc, 
                                node_power_attn=g['x'], edge_power_attn=g['edge_attr'], 
-                               edge_index=g['edge_index'], ptr=g['ptr'], batch=g['batch'])
+                               edge_index=g['edge_index'], ptr=g['ptr'], batch=g['batch'], link_rb=link_rb)
                 # Calculate PPO actor loss
-                act_log_prob = act_dist.log_prob(action)
                 act_prob_ratio = torch.exp(torch.clamp(act_log_prob - init_act_log_prob,
                                                         max=self._act_prob_ratio_exponent_clip))
                 actor_loss = torch.where(advantage >= 0,
                                             torch.minimum(act_prob_ratio, 1 + self._PPO_clip),
                                             torch.maximum(act_prob_ratio, 1 - self._PPO_clip))
                 actor_loss = -(actor_loss * advantage)
-                ####
-                #actor_loss = torch.mean(actor_loss[valid_mask])
                 actor_loss = torch.mean(actor_loss)
                 
-                #entropy_loss = -torch.mean(act_dist.entropy()[valid_mask])
-                entropy_loss = -torch.mean(act_dist.entropy())
+                entropy_loss = -torch.mean(entropy)
 
-                #value_loss = nn.MSELoss()(value[valid_mask], lambda_return[valid_mask])
                 value_loss = nn.MSELoss()(value, lambda_return)
-                ####
+
                 total_loss = actor_loss + self._entropy_loss_weight * entropy_loss + self._value_loss_weight * value_loss
                 ac_optimizer.zero_grad()
                 total_loss.backward()
@@ -345,7 +348,7 @@ class trainer:
             [p for p in self._ac.parameters() if p.requires_grad],
             lr=self._ac_lr
         )
-
+        self._ac.train()
         train_step = 0
         il_epochs = self._config.get('train.il_epochs', 20)
         il_repeat = 1000  # 🔁 반복 횟수 설정
@@ -357,8 +360,9 @@ class trainer:
             networks = self._sim.get_networks(num_networks=self._rollout_batch_size)
             g = self._sim.generate_pyg(networks, min_attn_db=self._min_attn_db,
                                     max_attn_db=self._max_attn_db, device=self._device)
+            link_rb_idx = self.get_order(g)
             g2 = self.quantize_power_attn(g)
-
+            
             # 2. expert solution 생성
             allocs = []
             for net in networks:
@@ -367,29 +371,30 @@ class trainer:
                 beam  = torch.tensor(sol['beam_index'])
                 joint = (power * self._num_beam + beam)
                 allocs.append(joint)
-            target_joint = torch.cat(allocs, dim=0).float().to(self._device)
-            target_joint = F.one_hot(target_joint.long(), num_classes=self._num_power_level*self._num_beam).view(-1, self._num_power_level * self._num_beam).float()
+            target_joint = torch.stack(allocs, dim=0).float().to(self._device)
+            
+            target_joint = F.one_hot(target_joint.view(target_joint.size(0), -1).long(), num_classes=self._num_power_level*self._num_beam).float()
             # 3. 초기 상태 설정
             num_nodes = g2.x.size(0)
             power_alloc = torch.zeros((num_nodes, self._num_rb, self._num_power_level), device=self._device)
             beam_alloc  = torch.zeros((num_nodes, self._num_rb, self._num_beam), device=self._device)
-            power_alloc[:, :, 0] = 1
-            beam_alloc[:, :, 0] = 1
+            # power_alloc[:, :, 0] = 1
+            # beam_alloc[:, :, 0] = 1
 
             # 4. il_epochs 동안 반복 학습
             for epoch in range(il_epochs):
-                self._ac.train()
+                
                 torch.cuda.empty_cache()
+                for i in range(link_rb_idx.size(1)):
+                    link_rb = link_rb_idx[:,i,:]
+                    link_rb_joint = link_rb[:,0] * self._num_beam + link_rb[:,1]
+                    target_link_rb = target_joint[torch.arange(link_rb_joint.size(0), device=self._device),link_rb_joint]
+                    _, _, _, _, logit = self._ac(
+                        power_alloc, beam_alloc,
+                        node_power_attn=g2.x, edge_power_attn=g2.edge_attr,
+                        edge_index=g2.edge_index, ptr=g2.ptr, batch=g2.batch, link_rb=link_rb)
 
-                act_dist, _ = self._ac(
-                    power_alloc, beam_alloc,
-                    node_power_attn=g2.x, edge_power_attn=g2.edge_attr,
-                    edge_index=g2.edge_index, ptr=g2.ptr, batch=g2.batch
-                )
-                logit = act_dist._logit  # [N, R, P, B]
-                logit_flat = logit.view(-1, self._num_power_level * self._num_beam)
-
-                loss = F.cross_entropy(logit_flat, target_joint)
+                loss = F.cross_entropy(logit, target_link_rb)
 
                 ac_optimizer.zero_grad()
                 loss.backward()
@@ -409,6 +414,23 @@ class trainer:
                     self.save_model(use_wandb)
 
 
+    def get_order(self, g):
+        
+        batch_size = len(g.ptr) - 1
+        num_link = g.x.size(0) // batch_size
+
+        #ptr = g.ptr
+
+        sum_interf = scatter_add(g.edge_attr, g.edge_index[0].long(), dim=0).view(-1, self._num_rb, self._num_beam).mean(dim=2)
+        # _, link_rb_index = sum_interf.flatten().sort()
+        #link_rb_index = [sum_interf[ptr[i]:ptr[i+1]].flatten().sort()[1] for i in range(len(ptr)-1)]
+        sorted_index = sum_interf.view(batch_size, -1, self._num_rb).view(batch_size, -1).sort(descending=True, dim=1)[1]
+        
+        link_idx = sorted_index // self._num_rb
+        rb_idx   = sorted_index % self._num_rb
+        link_rb_idx = torch.stack([link_idx, rb_idx], dim=2)
+        
+        return link_rb_idx
 
 
 if __name__ == '__main__':
@@ -420,5 +442,5 @@ if __name__ == '__main__':
     #tn.train_bc(use_wandb=False, save_model=True)
     #tn.load_model()
     tn.train_bc(use_wandb=True, save_model=True)
-    tn.train(use_wandb=True, save_model=True)
+    #tn.train(use_wandb=False, save_model=True)
     print(1)
