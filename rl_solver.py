@@ -5,7 +5,9 @@ import time
 import pandas as pd
 import yaml
 
-from ofdm_simulator.ofdm_simulator import OFDMSimulator
+import torch.nn.functional as F
+from torch_geometric.data import Data, Batch
+from ofdm_simulator.ofdm_simulator_4 import OFDMSimulator
 from model import AC
 
 class RLSolverOFDM:
@@ -27,25 +29,74 @@ class RLSolverOFDM:
         self._num_power_level = self._sim.num_power_level
         self._min_attn_db = self._config['train.min_attn_db']
         self._max_attn_db = self._config['train.max_attn_db']
+        self._power_attn_n_cls = self._config['train.power_attn.num_level']
+        self._power_attn_boundaries = torch.linspace(self._min_attn_db, self._max_attn_db, self._power_attn_n_cls).to(self._device)
 
         self._eval_file_list = self._sim.get_evaluation_networks_file_list()
-        self._num_eval = len(self._eval_file_list)
+        self._num_evaluation_networks = len(self._eval_file_list)
 
         self._ac = AC(num_power_level=self._num_power_level, num_rb=self._num_rb,
-                      num_beam=self._num_beam, model_params={k[6:]: self._config[k] for k in self._config if k.startswith('model.')},
+                      num_beam=self._num_beam, power_attn_num_level=self._power_attn_n_cls, model_params={k[6:]: self._config[k] for k in self._config if k.startswith('model.')},
                       device=device).to(device)
 
 
 
     def solve_all_evaluation_networks(self):
-        networks = [self._sim.get_evaluation_network(Path(file).name) for file in self._eval_file_list]
-        return self.solve(networks)
+        perf_list = []
+        elapsed_time_list = []
+        for idx in range(self._num_evaluation_networks):
+            perf, elapsed_time, _ = self.solve_evaluation_network(idx)
+            perf_list.append(perf)
+            elapsed_time_list.append(elapsed_time)
+        avg_perf = sum(perf_list) / len(perf_list)
+        avg_elapsed_time = sum(elapsed_time_list) / len(elapsed_time_list)
+        return avg_perf, avg_elapsed_time
+
+    def solve_evaluation_network(self, index):
+        network = self._sim.get_evaluation_network(self._eval_file_list[index])
+        perf, elapsed_time, solution = self.solve(network)
+        return perf, elapsed_time, solution
+
+
+    def quantize_power_attn(self, g):
+        '''Quantize the continous data graphs into a discrete data 
+        Args:
+            g_batch (graph): graph data 
+
+        Returns:
+            (graph): graph data with quantized features
+        '''
+        g_list = g.to_data_list()
+        g2_list = []
+        for g in g_list:
+            # convert node power attenuation to one hot form
+            node_power_attn = g.get_tensor('x').to(self._device)
+            node_power_attn = torch.bucketize(node_power_attn, self._power_attn_boundaries, right=True) - 1
+            node_power_attn[node_power_attn == -1] = 0
+            node_power_attn = F.one_hot(node_power_attn, num_classes=self._power_attn_n_cls).to(torch.float32)
+            
+            # convert edge power attenuation to one hot form
+            edge_power_attn = g.get_tensor('edge_attr').to(self._device)
+            edge_power_attn = torch.bucketize(edge_power_attn, self._power_attn_boundaries, right=True) - 1
+            valid_edge_idx = torch.all(edge_power_attn >= 0, dim=1)
+            edge_power_attn = edge_power_attn[valid_edge_idx]
+            edge_power_attn = F.one_hot(edge_power_attn, num_classes=self._power_attn_n_cls).to(torch.float32)
+            edge_index = g.edge_index.to(self._device)
+            edge_index = edge_index[:, valid_edge_idx]
+            # make a new graph
+            g2 = Data(x=node_power_attn, edge_index=edge_index, edge_attr=edge_power_attn)
+            g2_list.append(g2)
+        g2_batch = Batch.from_data_list(g2_list)
+        return g2_batch
+
 
     def solve(self, networks):
         start = time.perf_counter()
         self._ac.eval()
+        if len(networks) == 3:
+            networks = [networks] * 4
         batch = self._sim.generate_pyg(networks, min_attn_db=self._min_attn_db, max_attn_db=self._max_attn_db, device=self._device)
-
+        batch = self.quantize_power_attn(batch)
         ptr = batch.ptr
         batch_idx = batch.batch
         batch_size = len(ptr) - 1
@@ -63,15 +114,19 @@ class RLSolverOFDM:
 
         for it in range(self._max_iter):
             with torch.no_grad():
-                act_dist, _ = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc,
+                actions = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc,
                                        node_power_attn=batch.x, edge_power_attn=batch.edge_attr,
                                        edge_index=batch.edge_index, ptr=ptr, batch=batch_idx)
 
-                actions = act_dist.sample()
+                # actions = act_dist.sample()
                 for idx, act in enumerate(actions):
                     if not ongoing[idx]:
                         continue
-                    link, rb, beam = act
+                    link = act // (self._num_rb * self._num_beam)
+                    rbb = act % (self._num_rb * self._num_beam)
+                    rb = rbb // self._num_beam
+                    beam = rbb % self._num_beam
+                    #link, rb, beam = act
                     ptr_link = ptr[idx] + link
 
                     current_power = torch.argmax(power_alloc[ptr_link, rb]).item()
@@ -98,14 +153,14 @@ class RLSolverOFDM:
                 best_target = avg_target
                 best_solution = (power_alloc.clone(), beam_alloc.clone())
 
-            elapsed = time.perf_counter() - start
-            output_log.append([it, best_target, elapsed])
-            print(f"Iter: {it}, Target: {best_target:.4f}, Time: {elapsed:.2f}s")
+            #elapsed = time.perf_counter() - start
+            #output_log.append([it, best_target, elapsed])
+            #print(f"Iter: {it}, Target: {best_target:.4f}, Time: {elapsed:.2f}s")
 
-        df = pd.DataFrame(output_log, columns=['iter', 'target', 'time'])
-        out_path = Path(__file__).parents[0] / "evaluation_results" / "result_RL_OFDM.csv"
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(out_path, index=False)
+        # df = pd.DataFrame(output_log, columns=['iter', 'target', 'time'])
+        # out_path = Path(__file__).parents[0] / "evaluation_results" / "result_RL_OFDM.csv"
+        # out_path.parent.mkdir(parents=True, exist_ok=True)
+        # df.to_csv(out_path, index=False)
 
         total_time = time.perf_counter() - start
         return best_target, total_time, best_solution
@@ -118,5 +173,5 @@ if __name__ == '__main__':
     device = 'cuda:0'
     solver = RLSolverOFDM(gpu=True, device=device, max_iter=1000)
     solver.load_model()
-    perf, elapsed, sol = solver.solve_all_evaluation_networks()
+    perf, elapsed = solver.solve_all_evaluation_networks()
     print(f"Final Performance: {perf}, Time: {elapsed:.2f}s")

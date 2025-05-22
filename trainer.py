@@ -14,6 +14,7 @@ from model import AC
 from utility import Buffer, get_buffer_dataloader
 import wandb
 import time
+import pandas as pd
 
 class trainer:
     def __init__(self, params_file, device):
@@ -218,6 +219,7 @@ class trainer:
                 init_act_log_prob = d['act_log_prob']
                 lambda_return = d['return']                    
                 advantage = lambda_return - d['value']
+                advantage = (advantage - advantage.mean()) / (advantage.std(unbiased=False) + 1e-8)
                 ongoing = d['ongoing']
                 valid_mask = ongoing.bool()
             
@@ -243,7 +245,7 @@ class trainer:
                 #value_loss = nn.MSELoss()(value[valid_mask], lambda_return[valid_mask])
                 value_loss = nn.MSELoss()(value, lambda_return)
                 ####
-                total_loss = actor_loss + self._entropy_loss_weight * entropy_loss + self._value_loss_weight * value_loss
+                total_loss = actor_loss + self._entropy_loss_weight * entropy_loss + self._value_loss_weight * value_loss * 0.1
                 ac_optimizer.zero_grad()
                 total_loss.backward()
                 torch.nn.utils.clip_grad_norm_(self._ac.parameters(), self._clip_max_norm)
@@ -288,7 +290,7 @@ class trainer:
         buf.cal_reward()
         reward = buf.get_performance()
         target = buf._target.mean()
-
+        #self.save_rollout_to_excel_with_states(buf)
         reward = reward.mean()
         
 
@@ -326,9 +328,64 @@ class trainer:
         self._ac.load_state_dict(torch.load(path / 'ac.pt')) 
 
 
+    def rollout_to_dataframe(self, buf, save_path='rollout_summary.csv'):
+        step_n, batch_size, action_dim = buf._action.shape
+        records = []
+
+        for t in range(step_n):
+            for b in range(batch_size):
+                record = {
+                    "step": t,
+                    "batch_index": b,
+                    "action": buf._action[t, b].tolist(),
+                    "target_value": buf._target[t, b].item(),
+                    "power_alloc_sum": buf._power_alloc[t].sum().item(),
+                    "beam_alloc_sum": buf._beam_alloc[t].sum().item(),
+                    "value": buf._value[t, b].item(),
+                    "ongoing": bool(buf._ongoing[t, b].item())
+                }
+                records.append(record)
+
+        df = pd.DataFrame(records)
+        df.to_csv(save_path, index=False)
+        print(f"Rollout summary saved to {save_path}")
+
+
+    def save_rollout_to_excel_with_states(self, buf, save_path='rollout_summary.xlsx'):
+        """
+        각 batch를 별도 시트로 나누고, power_alloc과 beam_index를 포함하여 저장합니다.
+        """
+        step_n, batch_size, _ = buf._action.shape
+
+        with pd.ExcelWriter(save_path, engine='openpyxl') as writer:
+            for b in range(batch_size):
+                batch_records = []
+                for t in range(step_n):
+                    # power_alloc: [num_node, num_rb, num_power_level]
+                    power_step = buf._power_alloc[t].argmax(dim=-1).cpu().numpy()  # shape: [num_node, num_rb]
+                    beam_step = buf._beam_alloc[t].argmax(dim=-1).cpu().numpy()    # shape: [num_node, num_rb]
+
+                    record = {
+                        'step': t,
+                        'action': buf._action[t, b].tolist(),
+                        'target_value': buf._target[t, b].item(),
+                        'value': buf._value[t, b].item(),
+                        'ongoing': bool(buf._ongoing[t, b].item()),
+                        'power_alloc': power_step.tolist(),
+                        'beam_index': beam_step.tolist()
+                    }
+
+                    batch_records.append(record)
+
+                df_b = pd.DataFrame(batch_records)
+                df_b.to_excel(writer, sheet_name=f'Batch_{b}', index=False)
+
+        print(f"Excel saved to {save_path}")
+
 if __name__ == '__main__':
-    device = 'cuda:0'
+    device = 'cuda:2'
     tn = trainer(params_file='config.yaml', device=device)
-    tn.train(use_wandb=False, save_model=True)
+    #tn.load_model()
+    tn.train(use_wandb=True, save_model=True)
     #tn.evaluate()
     print(1)

@@ -47,20 +47,24 @@ class AC(nn.Module):
         edge_power_attn = edge_power_attn.reshape(edge_power_attn.size(0), -1)
         x = self._graph_transformer(input=resource_alloc, node_embedding=node_power_attn,
                                     edge_attr=edge_power_attn, edge_index=edge_index)
-        value = global_mean_pool(x=x, batch=batch)
-        value = self._critic_linear(value)[:, 0]
+        #value = global_mean_pool(x=x, batch=batch)
+        #value = self._critic_linear(value)[:, 0]
 
         logit = self._actor_linear(x)
-        logit = logit.reshape(power_alloc.size(0), self._num_rb, self._num_beam)
+        logit = logit.view(len(ptr)-1,-1)
+        dist = Categorical(logits=logit)
+        action = dist.sample()
+        return action
+        # logit = logit.reshape(power_alloc.size(0), self._num_rb, self._num_beam)
 
-        unterminated_mask = ~(power_alloc[:, :, -1] == 1)
-        logit = torch.where(condition=unterminated_mask.unsqueeze(2), input=logit, other=-torch.inf)
+        # unterminated_mask = ~(power_alloc[:, :, -1] == 1)
+        # logit = torch.where(condition=unterminated_mask.unsqueeze(2), input=logit, other=-torch.inf)
 
         
-        #logit[terminated_mask] = -torch.inf
+        # #logit[terminated_mask] = -torch.inf
 
-        act_dist = ActDist(logit, ptr, device=self._device)
-        return act_dist, value
+        # act_dist = ActDist(logit, ptr, device=self._device)
+        # return act_dist, value
 
 class ActDist:
     def __init__(self, logit, ptr, device):
