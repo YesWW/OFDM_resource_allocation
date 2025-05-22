@@ -252,15 +252,15 @@ if __name__ == '__main__':
     # print(1)
     #
     # Calculating performance target test
-    networks = net.get_networks(num_networks=16)
-    solutions = net.generate_random_solution(networks=networks)
-    for i in range(16):
-        print(net.is_solution_feasible(networks[i], solutions[i]))
+    # networks = net.get_networks(num_networks=16)
+    # solutions = net.generate_random_solution(networks=networks)
+    # for i in range(16):
+    #     print(net.is_solution_feasible(networks[i], solutions[i]))
     # opt_tgt = net.get_optimization_target(networks[0], solutions[0])
     # feasible = net.is_solution_feasible(networks[0], solutions[0])
 
     # # Generate evaluation dataset
-    # net.generate_evaluation_networks(10)
+    net.generate_evaluation_networks(10)
     # eval_file_list = net.get_evaluation_networks_file_list()
     # network = net.get_evaluation_network(eval_file_list[0])
     # net.plot(network)

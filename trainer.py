@@ -386,6 +386,6 @@ if __name__ == '__main__':
     device = 'cuda:2'
     tn = trainer(params_file='config.yaml', device=device)
     #tn.load_model()
-    tn.train(use_wandb=True, save_model=True)
+    tn.train(use_wandb=False, save_model=True)
     #tn.evaluate()
     print(1)

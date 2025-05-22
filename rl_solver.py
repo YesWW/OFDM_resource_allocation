@@ -94,7 +94,7 @@ class RLSolverOFDM:
         start = time.perf_counter()
         self._ac.eval()
         if len(networks) == 3:
-            networks = [networks] * 4
+            networks = [networks] * 16
         batch = self._sim.generate_pyg(networks, min_attn_db=self._min_attn_db, max_attn_db=self._max_attn_db, device=self._device)
         batch = self.quantize_power_attn(batch)
         ptr = batch.ptr
