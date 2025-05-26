@@ -11,7 +11,7 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.utils import degree
 from ofdm_simulator.ofdm_simulator_4 import OFDMSimulator
 from model import AC
-from utility import Buffer, get_buffer_dataloader
+from utility import Buffer, get_buffer_dataloader, ExpertDataset, get_expert_dataloader
 import wandb
 import time
 from tabu_search import TabuSearch
@@ -420,8 +420,8 @@ class trainer:
         num_link = g.x.size(0) // batch_size
 
         #ptr = g.ptr
-
-        sum_interf = scatter_add(g.edge_attr, g.edge_index[0].long(), dim=0).view(-1, self._num_rb, self._num_beam).mean(dim=2)
+        
+        sum_interf = scatter_add(torch.argmax(g.edge_attr, dim=2).float(), g.edge_index[0].long(), dim=0).view(-1, self._num_rb, self._num_beam).mean(dim=2)
         # _, link_rb_index = sum_interf.flatten().sort()
         #link_rb_index = [sum_interf[ptr[i]:ptr[i+1]].flatten().sort()[1] for i in range(len(ptr)-1)]
         sorted_index = sum_interf.view(batch_size, -1, self._num_rb).view(batch_size, -1).sort(descending=True, dim=1)[1]
@@ -432,6 +432,134 @@ class trainer:
         
         return link_rb_idx
 
+    def generate_expert_dataset(self, save_path='expert_dataset.pt', num_samples=1000):
+        all_graphs = []
+        all_targets = []
+        for i in tqdm(range(num_samples // self._rollout_batch_size)):
+            networks = self._sim.get_networks(num_networks=self._rollout_batch_size)
+            g = self._sim.generate_pyg(networks, min_attn_db=self._min_attn_db,
+                                    max_attn_db=self._max_attn_db, device=self._device)
+            link_rb_idx = self.get_order(g)
+            g2 = self.quantize_power_attn(g)
+
+            allocs = []
+            for net in networks:
+                sol = self._tabu.solve_bc(net)
+                power = torch.tensor(sol['power_level'])
+                beam  = torch.tensor(sol['beam_index'])
+                joint = (power * self._num_beam + beam)
+                allocs.append(joint)
+
+            joint_alloc = torch.stack(allocs, dim=0)  # [batch, link, rb]
+            all_graphs.append(g2.to('cpu'))
+            all_targets.append(joint_alloc.to('cpu'))
+
+        dataset = {
+            'graphs': all_graphs,
+            'targets': all_targets
+        }
+        torch.save(dataset, save_path)
+        print(f"Saved expert dataset to: {save_path}")
+
+    def train_bc_from_dataset_batch(self, dataset_path='expert_dataset.pt', use_wandb=False, save_model=True):
+        # Load and flatten
+        dataset = torch.load(dataset_path)
+        graph_batches = dataset['graphs']
+        target_batches = dataset['targets']
+
+        
+        graph_list = []
+        target_list = []
+        power_list = []
+        beam_list = []
+        link_rb_list = []
+
+        for g_batch, t_batch in zip(graph_batches, target_batches):
+            link_rb_idx = self.get_order(g_batch)
+            power_alloc = torch.zeros(size=(g_batch.x.size(0), self._num_rb, self._num_power_level)).to(self._device)
+            beam_alloc = torch.zeros(size=(g_batch.x.size(0), self._num_rb, self._num_beam)).to(self._device)
+            ptr = g_batch.ptr
+            graph_list.append(g_batch)
+            target_list.append(t_batch)
+            p_list = []
+            b_list = []
+            lr_list = []
+            for lr in range(link_rb_idx.size(1)):
+                link_rb = link_rb_idx[:, lr, :]
+                for idx in range(len(ptr)-1):
+                    link, rb = link_rb[idx]
+                    target = t_batch[idx][link][rb]
+                    power = target // self._num_beam
+                    beam = target % self._num_beam
+                    ptr_link = ptr[idx]+link
+                    power_alloc[ptr_link][rb][power] = 1.0
+                    beam_alloc[ptr_link][rb][beam] = 1.0
+                p_list.append(power_alloc)
+                b_list.append(beam_alloc)
+                lr_list.append(link_rb)
+            power_list.append(torch.stack(p_list))
+            beam_list.append(torch.stack(b_list))
+            link_rb_list.append(torch.stack(lr_list))
+
+        # Dataset & DataLoader
+        expert_dataset = ExpertDataset(graph_list, target_list, power_list, beam_list, link_rb_list)
+        dataloader = get_expert_dataloader(expert_dataset,  batch_size=self._buffer_batch_size, shuffle=True)
+
+        ac_optimizer = torch.optim.Adam(
+            [p for p in self._ac.parameters() if p.requires_grad],
+            lr=self._ac_lr
+        )
+        self._ac.train()
+        train_step = 0
+        il_epochs = self._config.get('train.il_epochs', 20)
+
+        for epoch in range(il_epochs):
+            for batch_idx, (g2, joint_alloc) in enumerate(dataloader):
+                g2 = g2.to(self._device)
+                joint_alloc = joint_alloc.to(self._device)  # [B, link, rb]
+                link_rb_idx = self.get_order(g2)  # [B, L*RB, 2]
+
+                num_nodes = g2.x.size(0)
+                power_alloc = torch.zeros((num_nodes, self._num_rb, self._num_power_level), device=self._device)
+                beam_alloc  = torch.zeros((num_nodes, self._num_rb, self._num_beam), device=self._device)
+
+                total_loss = 0
+                for step in range(link_rb_idx.size(1)):
+                    link_rb = link_rb_idx[:, step, :]  # [B, 2]
+                    batch_indices = torch.arange(link_rb.size(0), device=self._device)
+
+                    # expert label: [B]
+                    target = joint_alloc[batch_indices, link_rb[:, 0], link_rb[:, 1]]
+
+                    _, _, _, _, logit = self._ac(
+                        power_alloc, beam_alloc,
+                        node_power_attn=g2.x, edge_power_attn=g2.edge_attr,
+                        edge_index=g2.edge_index, ptr=g2.ptr, batch=g2.batch, link_rb=link_rb)
+
+                    loss = F.cross_entropy(logit, target)
+                    ac_optimizer.zero_grad()
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self._ac.parameters(), self._clip_max_norm)
+                    ac_optimizer.step()
+
+                    total_loss += loss.item()
+                    train_step += 1
+                    if use_wandb:
+                        wandb.log({"train/step": train_step, "train/il_loss": loss.item()})
+
+                print(f"[Epoch {epoch+1} | Batch {batch_idx+1}] Total IL loss: {total_loss:.4f}")
+
+            # periodic evaluation
+            if epoch % self._eval_period == 0:
+                self.evaluate(use_wandb)
+                if save_model:
+                    self.save_model(use_wandb)
+
+
+
+
+
+
 
 if __name__ == '__main__':
     device = 'cuda:0'
@@ -441,6 +569,8 @@ if __name__ == '__main__':
     #tn.evaluate()
     #tn.train_bc(use_wandb=False, save_model=True)
     #tn.load_model()
-    tn.train_bc(use_wandb=True, save_model=True)
+    #tn.train_bc(use_wandb=True, save_model=True)
     #tn.train(use_wandb=False, save_model=True)
+    #tn.generate_expert_dataset()
+    tn.train_bc_from_dataset_batch(use_wandb=False, save_model=True)
     print(1)

@@ -95,5 +95,66 @@ def get_buffer_dataloader(buf, batch_size, shuffle=True):
     return dataloader
 
 
+class ExpertDataset(Dataset):
+    def __init__(self, graph_list, target_list, power_list, beam_list, link_rb_list):
+        self.graphs = graph_list
+        self.targets = target_list
+        self.powers = power_list
+        self.beams = beam_list
+        self.link_rbs = link_rb_list
+
+        self.index_table = []  # (graph_idx, step, ue_idx)
+        for g_idx, link_rb in enumerate(link_rb_list):
+            T, B, _ = link_rb.shape
+            for t in range(T):
+                for b in range(B):
+                    self.index_table.append((g_idx, t, b))
+
+    def __len__(self):
+        return len(self.index_table)
+
+    def __getitem__(self, idx):
+        g_idx, t, b = self.index_table[idx]
+        g = self.graphs[g_idx]
+        t_tensor = self.targets[g_idx]        # [B, L, R]
+        power_alloc = self.powers[g_idx][t]  # [N, R, P]
+        beam_alloc  = self.beams[g_idx][t]   # [N, R, B]
+        link_rb = self.link_rbs[g_idx][t][b] # [2]
+        ptr = g.ptr
+
+        # target label
+        link, rb = link_rb
+        target = t_tensor[b][link][rb]
+
+        return {
+            'graph': g,
+            'power_alloc': power_alloc,
+            'beam_alloc': beam_alloc,
+            'link_rb': link_rb,
+            'target': target
+        }
+
+def collate_fn_il(batch):
+    graph = batch[0]['graph']
+    batch_graph = Batch.from_data_list(graph.to_data_list())  # 동일 graph_batch 공유
+
+    out = {
+        'graph': batch_graph,
+        'power_alloc': torch.stack([b['power_alloc'] for b in batch]),  # [B', N, R, P]
+        'beam_alloc': torch.stack([b['beam_alloc'] for b in batch]),    # [B', N, R, B]
+        'link_rb': torch.stack([b['link_rb'] for b in batch]),          # [B', 2]
+        'target': torch.stack([b['target'] for b in batch])             # [B']
+    }
+
+    return out
+
+def get_expert_dataloader(dataset, batch_size, shuffle=True):
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        collate_fn=collate_fn_il
+    )
+
 if __name__ == '__main__':
     pass
