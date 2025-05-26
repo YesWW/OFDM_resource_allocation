@@ -119,7 +119,6 @@ class trainer:
         beam_alloc = torch.zeros(size=(num_node, self._num_rb, self._num_beam)).to(self._device)
 
         g2 = self.quantize_power_attn(g)
-        #power_alloc[0][0][0] = 1
         unallocated_rb = torch.full(size=(num_node, self._num_rb), fill_value=True).to(self._device)
         ongoing = torch.full(size=(batch_size,), fill_value=True).to(self._device)
 
@@ -134,10 +133,10 @@ class trainer:
 
         with torch.no_grad():
             while torch.any(ongoing):
-                action, act_log_prob, value, _ = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc,
+                act_dist, value = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc,
                                            node_power_attn=g2.x, edge_power_attn=g2.edge_attr, edge_index=g2.edge_index, ptr=ptr, batch=batch)
-                # action = act_dist.sample()
-                # act_log_prob = act_dist.log_prob(action)
+                action = act_dist.sample()
+                act_log_prob = act_dist.log_prob(action)
 
                 power_alloc_buf.append(power_alloc.detach().clone().cpu())
                 beam_alloc_buf.append(beam_alloc.detach().clone().cpu())
@@ -150,7 +149,7 @@ class trainer:
                 # update resource allocation
                 for idx, act in enumerate(action):
                     if ongoing[idx]:
-                        link, rb, beam, power = act
+                        link, rb, power, beam = act
                         ptr_link = ptr[idx] + link
 
                         power_alloc[ptr_link][rb][power] = 1.0
@@ -211,18 +210,18 @@ class trainer:
                 g = d['graph']
                 power_alloc = d['power_alloc']
                 beam_alloc = d['beam_alloc']
-                #action = d['action']
+                action = d['action']
                 init_act_log_prob = d['act_log_prob']
                 lambda_return = d['return']                    
                 advantage = lambda_return - d['value']
 
             
                 # Train actor
-                _, act_log_prob, value, entropy = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc, 
+                act_dist, value = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc, 
                                node_power_attn=g['x'], edge_power_attn=g['edge_attr'], 
                                edge_index=g['edge_index'], ptr=g['ptr'], batch=g['batch'])
                 # Calculate PPO actor loss
-                # act_log_prob = act_dist.log_prob(action)
+                act_log_prob = act_dist.log_prob(action)
                 act_prob_ratio = torch.exp(torch.clamp(act_log_prob - init_act_log_prob,
                                                         max=self._act_prob_ratio_exponent_clip))
                 actor_loss = torch.where(advantage >= 0,
@@ -233,8 +232,8 @@ class trainer:
                 #actor_loss = torch.mean(actor_loss[valid_mask])
                 actor_loss = torch.mean(actor_loss)
                 
-                #entropy_loss = -torch.mean(act_dist.entropy()[valid_mask])
-                entropy_loss = -torch.mean(entropy)
+                entropy_loss = -torch.mean(act_dist.entropy())
+                #entropy_loss = -torch.mean(entropy)
 
                 #value_loss = nn.MSELoss()(value[valid_mask], lambda_return[valid_mask])
                 value_loss = nn.MSELoss()(value, lambda_return)
@@ -325,6 +324,6 @@ class trainer:
 if __name__ == '__main__':
     device = 'cuda:0'
     tn = trainer(params_file='config.yaml', device=device)
-    tn.train(use_wandb=True, save_model=True)
+    tn.train(use_wandb=False, save_model=True)
     #tn.evaluate()
     print(1)
