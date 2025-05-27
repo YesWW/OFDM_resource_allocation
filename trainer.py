@@ -128,8 +128,9 @@ class trainer:
         batch_size = int(ptr.shape[0]) - 1
         power_alloc = torch.zeros(size=(num_node, self._num_rb, self._num_power_level)).to(self._device)
         beam_alloc = torch.zeros(size=(num_node, self._num_rb, self._num_beam)).to(self._device)
-        link_rb_idx = self.get_order(g) # [batch, link*rb, 2]
+         # [batch, link*rb, 2]
         g2 = self.quantize_power_attn(g)
+        link_rb_idx = self.get_order(g2)
         # power_alloc[:,:,0] = 1
         # beam_alloc[:,:,0] = 1
         # unterminated_node = torch.full(size=(num_node, self._num_rb), fill_value=True).to(self._device)
@@ -462,6 +463,11 @@ class trainer:
         print(f"Saved expert dataset to: {save_path}")
 
     def train_bc_from_dataset_batch(self, dataset_path='expert_dataset.pt', use_wandb=False, save_model=True):
+        if use_wandb:
+            wandb.init(project='OFDM_resource_allocation_IL', config=self._config)
+            wandb.define_metric("train/step")
+            wandb.define_metric("train/*", step_metric="train/step")
+            wandb.define_metric("evaluate/*")
         # Load and flatten
         dataset = torch.load(dataset_path)
         graph_batches = dataset['graphs']

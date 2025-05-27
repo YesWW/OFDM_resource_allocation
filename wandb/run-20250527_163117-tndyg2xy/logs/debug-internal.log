@@ -1,0 +1,170 @@
+2025-05-27 16:31:17,062 INFO    StreamThr :24112 [internal.py:wandb_internal():85] W&B internal server running at pid: 24112, started at: 2025-05-27 16:31:17.062474
+2025-05-27 16:31:17,063 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: status
+2025-05-27 16:31:17,065 INFO    WriterThread:24112 [datastore.py:open_for_write():87] open: C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\wandb\run-20250527_163117-tndyg2xy\run-tndyg2xy.wandb
+2025-05-27 16:31:17,065 DEBUG   SenderThread:24112 [sender.py:send():378] send: header
+2025-05-27 16:31:17,097 DEBUG   SenderThread:24112 [sender.py:send():378] send: run
+2025-05-27 16:31:17,608 INFO    SenderThread:24112 [dir_watcher.py:__init__():211] watching files in: C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\wandb\run-20250527_163117-tndyg2xy\files
+2025-05-27 16:31:17,608 INFO    SenderThread:24112 [sender.py:_start_run_threads():1123] run started: tndyg2xy with start time 1748331077.063478
+2025-05-27 16:31:17,616 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: check_version
+2025-05-27 16:31:17,616 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: check_version
+2025-05-27 16:31:17,663 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: run_start
+2025-05-27 16:31:17,706 DEBUG   HandlerThread:24112 [system_info.py:__init__():26] System info init
+2025-05-27 16:31:17,706 DEBUG   HandlerThread:24112 [system_info.py:__init__():41] System info init done
+2025-05-27 16:31:17,706 INFO    HandlerThread:24112 [system_monitor.py:start():194] Starting system monitor
+2025-05-27 16:31:17,707 INFO    SystemMonitor:24112 [system_monitor.py:_start():158] Starting system asset monitoring threads
+2025-05-27 16:31:17,707 INFO    HandlerThread:24112 [system_monitor.py:probe():214] Collecting system info
+2025-05-27 16:31:17,711 INFO    SystemMonitor:24112 [interfaces.py:start():188] Started cpu monitoring
+2025-05-27 16:31:17,711 INFO    SystemMonitor:24112 [interfaces.py:start():188] Started disk monitoring
+2025-05-27 16:31:17,712 INFO    SystemMonitor:24112 [interfaces.py:start():188] Started gpu monitoring
+2025-05-27 16:31:17,718 INFO    SystemMonitor:24112 [interfaces.py:start():188] Started memory monitoring
+2025-05-27 16:31:17,749 INFO    SystemMonitor:24112 [interfaces.py:start():188] Started network monitoring
+2025-05-27 16:31:17,752 DEBUG   HandlerThread:24112 [system_info.py:probe():150] Probing system
+2025-05-27 16:31:17,753 DEBUG   HandlerThread:24112 [system_info.py:_probe_git():135] Probing git
+2025-05-27 16:31:17,814 DEBUG   HandlerThread:24112 [system_info.py:_probe_git():143] Probing git done
+2025-05-27 16:31:17,814 DEBUG   HandlerThread:24112 [system_info.py:probe():198] Probing system done
+2025-05-27 16:31:17,814 DEBUG   HandlerThread:24112 [system_monitor.py:probe():223] {'os': 'Windows-11-10.0.26100-SP0', 'python': '3.12.3', 'heartbeatAt': '2025-05-27T07:31:17.752896', 'startedAt': '2025-05-27T07:31:17.049581', 'docker': None, 'cuda': None, 'args': (), 'state': 'running', 'program': 'C:\\Users\\daopr\\Desktop\\OFDM\\OFDM_resource_allocation\\trainer.py', 'codePathLocal': 'trainer.py', 'codePath': 'trainer.py', 'git': {'remote': 'https://github.com/YesWW/OFDM_resource_allocation.git', 'commit': 'c55f2ba39d8d9ca7e4510a5a4c4c497cbfddc9bc'}, 'email': 'daoproject123@gmail.com', 'root': 'C:/Users/daopr/Desktop/OFDM/OFDM_resource_allocation', 'host': 'wonwoo', 'username': 'daopr', 'executable': 'C:\\Users\\daopr\\anaconda3\\envs\\hanwha\\python.exe', 'cpu_count': 8, 'cpu_count_logical': 16, 'cpu_freq': {'current': 3801.0, 'min': 0.0, 'max': 3801.0}, 'cpu_freq_per_core': [{'current': 3801.0, 'min': 0.0, 'max': 3801.0}], 'disk': {'/': {'total': 930.6210899353027, 'used': 455.2713508605957}}, 'gpu': 'NVIDIA GeForce RTX 4080 SUPER', 'gpu_count': 1, 'gpu_devices': [{'name': 'NVIDIA GeForce RTX 4080 SUPER', 'memory_total': 17171480576}], 'memory': {'total': 63.14670944213867}}
+2025-05-27 16:31:17,814 INFO    HandlerThread:24112 [system_monitor.py:probe():224] Finished collecting system info
+2025-05-27 16:31:17,814 INFO    HandlerThread:24112 [system_monitor.py:probe():227] Publishing system info
+2025-05-27 16:31:17,814 DEBUG   HandlerThread:24112 [system_info.py:_save_conda():207] Saving list of conda packages installed into the current environment
+2025-05-27 16:31:18,615 INFO    Thread-16 :24112 [dir_watcher.py:_on_file_created():271] file/dir created: C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\wandb\run-20250527_163117-tndyg2xy\files\conda-environment.yaml
+2025-05-27 16:31:20,430 DEBUG   HandlerThread:24112 [system_info.py:_save_conda():222] Saving conda packages done
+2025-05-27 16:31:20,430 INFO    HandlerThread:24112 [system_monitor.py:probe():229] Finished publishing system info
+2025-05-27 16:31:20,437 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: poll_exit
+2025-05-27 16:31:20,437 DEBUG   SenderThread:24112 [sender.py:send():378] send: exit
+2025-05-27 16:31:20,437 INFO    SenderThread:24112 [sender.py:send_exit():585] handling exit code: 255
+2025-05-27 16:31:20,437 INFO    SenderThread:24112 [sender.py:send_exit():587] handling runtime: 2
+2025-05-27 16:31:20,438 INFO    SenderThread:24112 [sender.py:_save_file():1389] saving file wandb-summary.json with policy end
+2025-05-27 16:31:20,438 INFO    SenderThread:24112 [sender.py:send_exit():593] send defer
+2025-05-27 16:31:20,438 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: poll_exit
+2025-05-27 16:31:20,438 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: defer
+2025-05-27 16:31:20,438 DEBUG   SenderThread:24112 [sender.py:send():378] send: files
+2025-05-27 16:31:20,438 INFO    HandlerThread:24112 [handler.py:handle_request_defer():184] handle defer: 0
+2025-05-27 16:31:20,439 INFO    SenderThread:24112 [sender.py:_save_file():1389] saving file wandb-metadata.json with policy now
+2025-05-27 16:31:20,439 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: defer
+2025-05-27 16:31:20,439 INFO    SenderThread:24112 [sender.py:send_request_defer():609] handle sender defer: 0
+2025-05-27 16:31:20,439 INFO    SenderThread:24112 [sender.py:transition_state():613] send defer: 1
+2025-05-27 16:31:20,439 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: defer
+2025-05-27 16:31:20,439 INFO    HandlerThread:24112 [handler.py:handle_request_defer():184] handle defer: 1
+2025-05-27 16:31:20,439 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: defer
+2025-05-27 16:31:20,439 INFO    SenderThread:24112 [sender.py:send_request_defer():609] handle sender defer: 1
+2025-05-27 16:31:20,439 INFO    SenderThread:24112 [sender.py:transition_state():613] send defer: 2
+2025-05-27 16:31:20,440 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: defer
+2025-05-27 16:31:20,440 INFO    HandlerThread:24112 [handler.py:handle_request_defer():184] handle defer: 2
+2025-05-27 16:31:20,440 INFO    HandlerThread:24112 [system_monitor.py:finish():203] Stopping system monitor
+2025-05-27 16:31:20,440 DEBUG   SystemMonitor:24112 [system_monitor.py:_start():172] Starting system metrics aggregation loop
+2025-05-27 16:31:20,446 INFO    HandlerThread:24112 [interfaces.py:finish():200] Joined cpu monitor
+2025-05-27 16:31:20,446 DEBUG   SystemMonitor:24112 [system_monitor.py:_start():179] Finished system metrics aggregation loop
+2025-05-27 16:31:20,446 INFO    HandlerThread:24112 [interfaces.py:finish():200] Joined disk monitor
+2025-05-27 16:31:20,447 DEBUG   SystemMonitor:24112 [system_monitor.py:_start():183] Publishing last batch of metrics
+2025-05-27 16:31:20,482 INFO    HandlerThread:24112 [interfaces.py:finish():200] Joined gpu monitor
+2025-05-27 16:31:20,482 INFO    HandlerThread:24112 [interfaces.py:finish():200] Joined memory monitor
+2025-05-27 16:31:20,482 INFO    HandlerThread:24112 [interfaces.py:finish():200] Joined network monitor
+2025-05-27 16:31:20,482 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: defer
+2025-05-27 16:31:20,483 INFO    SenderThread:24112 [sender.py:send_request_defer():609] handle sender defer: 2
+2025-05-27 16:31:20,483 INFO    SenderThread:24112 [sender.py:transition_state():613] send defer: 3
+2025-05-27 16:31:20,483 DEBUG   SenderThread:24112 [sender.py:send():378] send: stats
+2025-05-27 16:31:20,483 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: defer
+2025-05-27 16:31:20,483 INFO    HandlerThread:24112 [handler.py:handle_request_defer():184] handle defer: 3
+2025-05-27 16:31:20,483 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: defer
+2025-05-27 16:31:20,483 INFO    SenderThread:24112 [sender.py:send_request_defer():609] handle sender defer: 3
+2025-05-27 16:31:20,483 INFO    SenderThread:24112 [sender.py:transition_state():613] send defer: 4
+2025-05-27 16:31:20,483 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: defer
+2025-05-27 16:31:20,483 INFO    HandlerThread:24112 [handler.py:handle_request_defer():184] handle defer: 4
+2025-05-27 16:31:20,483 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: defer
+2025-05-27 16:31:20,483 INFO    SenderThread:24112 [sender.py:send_request_defer():609] handle sender defer: 4
+2025-05-27 16:31:20,483 INFO    SenderThread:24112 [sender.py:transition_state():613] send defer: 5
+2025-05-27 16:31:20,483 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: defer
+2025-05-27 16:31:20,484 INFO    HandlerThread:24112 [handler.py:handle_request_defer():184] handle defer: 5
+2025-05-27 16:31:20,484 DEBUG   SenderThread:24112 [sender.py:send():378] send: summary
+2025-05-27 16:31:20,484 INFO    SenderThread:24112 [sender.py:_save_file():1389] saving file wandb-summary.json with policy end
+2025-05-27 16:31:20,484 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: defer
+2025-05-27 16:31:20,484 INFO    SenderThread:24112 [sender.py:send_request_defer():609] handle sender defer: 5
+2025-05-27 16:31:20,484 INFO    SenderThread:24112 [sender.py:transition_state():613] send defer: 6
+2025-05-27 16:31:20,485 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: defer
+2025-05-27 16:31:20,485 INFO    HandlerThread:24112 [handler.py:handle_request_defer():184] handle defer: 6
+2025-05-27 16:31:20,485 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: defer
+2025-05-27 16:31:20,485 INFO    SenderThread:24112 [sender.py:send_request_defer():609] handle sender defer: 6
+2025-05-27 16:31:20,485 INFO    SenderThread:24112 [sender.py:transition_state():613] send defer: 7
+2025-05-27 16:31:20,485 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: status_report
+2025-05-27 16:31:20,485 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: defer
+2025-05-27 16:31:20,485 INFO    HandlerThread:24112 [handler.py:handle_request_defer():184] handle defer: 7
+2025-05-27 16:31:20,485 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: defer
+2025-05-27 16:31:20,485 INFO    SenderThread:24112 [sender.py:send_request_defer():609] handle sender defer: 7
+2025-05-27 16:31:20,485 INFO    SenderThread:24112 [sender.py:transition_state():613] send defer: 8
+2025-05-27 16:31:20,485 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: defer
+2025-05-27 16:31:20,485 INFO    HandlerThread:24112 [handler.py:handle_request_defer():184] handle defer: 8
+2025-05-27 16:31:20,485 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: defer
+2025-05-27 16:31:20,485 INFO    SenderThread:24112 [sender.py:send_request_defer():609] handle sender defer: 8
+2025-05-27 16:31:20,486 INFO    SenderThread:24112 [job_builder.py:build():432] Attempting to build job artifact
+2025-05-27 16:31:20,486 WARNING SenderThread:24112 [job_builder.py:_log_if_verbose():267] No requirements.txt found, not creating job artifact. See https://docs.wandb.ai/guides/launch/create-job
+2025-05-27 16:31:20,486 INFO    SenderThread:24112 [sender.py:transition_state():613] send defer: 9
+2025-05-27 16:31:20,486 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: defer
+2025-05-27 16:31:20,486 INFO    HandlerThread:24112 [handler.py:handle_request_defer():184] handle defer: 9
+2025-05-27 16:31:20,486 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: defer
+2025-05-27 16:31:20,486 INFO    SenderThread:24112 [sender.py:send_request_defer():609] handle sender defer: 9
+2025-05-27 16:31:20,486 INFO    SenderThread:24112 [dir_watcher.py:finish():358] shutting down directory watcher
+2025-05-27 16:31:20,632 INFO    SenderThread:24112 [dir_watcher.py:_on_file_modified():288] file/dir modified: C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\wandb\run-20250527_163117-tndyg2xy\files\conda-environment.yaml
+2025-05-27 16:31:20,632 INFO    SenderThread:24112 [dir_watcher.py:_on_file_created():271] file/dir created: C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\wandb\run-20250527_163117-tndyg2xy\files\wandb-metadata.json
+2025-05-27 16:31:20,632 INFO    SenderThread:24112 [dir_watcher.py:_on_file_created():271] file/dir created: C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\wandb\run-20250527_163117-tndyg2xy\files\wandb-summary.json
+2025-05-27 16:31:20,633 INFO    SenderThread:24112 [dir_watcher.py:finish():388] scan: C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\wandb\run-20250527_163117-tndyg2xy\files
+2025-05-27 16:31:20,633 INFO    SenderThread:24112 [dir_watcher.py:finish():402] scan save: C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\wandb\run-20250527_163117-tndyg2xy\files\conda-environment.yaml conda-environment.yaml
+2025-05-27 16:31:20,633 INFO    SenderThread:24112 [dir_watcher.py:finish():402] scan save: C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\wandb\run-20250527_163117-tndyg2xy\files\config.yaml config.yaml
+2025-05-27 16:31:20,633 INFO    SenderThread:24112 [dir_watcher.py:finish():402] scan save: C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\wandb\run-20250527_163117-tndyg2xy\files\wandb-metadata.json wandb-metadata.json
+2025-05-27 16:31:20,633 INFO    SenderThread:24112 [dir_watcher.py:finish():402] scan save: C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\wandb\run-20250527_163117-tndyg2xy\files\wandb-summary.json wandb-summary.json
+2025-05-27 16:31:20,635 INFO    SenderThread:24112 [sender.py:transition_state():613] send defer: 10
+2025-05-27 16:31:20,635 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: defer
+2025-05-27 16:31:20,635 INFO    HandlerThread:24112 [handler.py:handle_request_defer():184] handle defer: 10
+2025-05-27 16:31:20,637 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: defer
+2025-05-27 16:31:20,637 INFO    SenderThread:24112 [sender.py:send_request_defer():609] handle sender defer: 10
+2025-05-27 16:31:20,637 INFO    SenderThread:24112 [file_pusher.py:finish():169] shutting down file pusher
+2025-05-27 16:31:20,693 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: poll_exit
+2025-05-27 16:31:20,693 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: poll_exit
+2025-05-27 16:31:21,167 INFO    wandb-upload_0:24112 [upload_job.py:push():130] Uploaded file C:\Users\daopr\AppData\Local\Temp\tmpqe3xvdwvwandb\m8f5irea-wandb-metadata.json
+2025-05-27 16:31:21,173 INFO    wandb-upload_1:24112 [upload_job.py:push():130] Uploaded file C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\wandb\run-20250527_163117-tndyg2xy\files\conda-environment.yaml
+2025-05-27 16:31:21,182 INFO    wandb-upload_3:24112 [upload_job.py:push():130] Uploaded file C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\wandb\run-20250527_163117-tndyg2xy\files\wandb-summary.json
+2025-05-27 16:31:21,202 INFO    wandb-upload_2:24112 [upload_job.py:push():130] Uploaded file C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\wandb\run-20250527_163117-tndyg2xy\files\config.yaml
+2025-05-27 16:31:21,418 INFO    Thread-15 (_thread_body):24112 [sender.py:transition_state():613] send defer: 11
+2025-05-27 16:31:21,418 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: defer
+2025-05-27 16:31:21,418 INFO    HandlerThread:24112 [handler.py:handle_request_defer():184] handle defer: 11
+2025-05-27 16:31:21,418 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: defer
+2025-05-27 16:31:21,418 INFO    SenderThread:24112 [sender.py:send_request_defer():609] handle sender defer: 11
+2025-05-27 16:31:21,418 INFO    SenderThread:24112 [file_pusher.py:join():175] waiting for file pusher
+2025-05-27 16:31:21,419 INFO    SenderThread:24112 [sender.py:transition_state():613] send defer: 12
+2025-05-27 16:31:21,419 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: defer
+2025-05-27 16:31:21,419 INFO    HandlerThread:24112 [handler.py:handle_request_defer():184] handle defer: 12
+2025-05-27 16:31:21,419 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: defer
+2025-05-27 16:31:21,419 INFO    SenderThread:24112 [sender.py:send_request_defer():609] handle sender defer: 12
+2025-05-27 16:31:21,419 INFO    SenderThread:24112 [file_stream.py:finish():601] file stream finish called
+2025-05-27 16:31:21,704 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: poll_exit
+2025-05-27 16:31:22,105 INFO    SenderThread:24112 [file_stream.py:finish():605] file stream finish is done
+2025-05-27 16:31:22,105 INFO    SenderThread:24112 [sender.py:transition_state():613] send defer: 13
+2025-05-27 16:31:22,105 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: poll_exit
+2025-05-27 16:31:22,106 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: defer
+2025-05-27 16:31:22,107 INFO    HandlerThread:24112 [handler.py:handle_request_defer():184] handle defer: 13
+2025-05-27 16:31:22,107 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: defer
+2025-05-27 16:31:22,107 INFO    SenderThread:24112 [sender.py:send_request_defer():609] handle sender defer: 13
+2025-05-27 16:31:22,107 INFO    SenderThread:24112 [sender.py:transition_state():613] send defer: 14
+2025-05-27 16:31:22,107 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: defer
+2025-05-27 16:31:22,107 DEBUG   SenderThread:24112 [sender.py:send():378] send: final
+2025-05-27 16:31:22,107 INFO    HandlerThread:24112 [handler.py:handle_request_defer():184] handle defer: 14
+2025-05-27 16:31:22,107 DEBUG   SenderThread:24112 [sender.py:send():378] send: footer
+2025-05-27 16:31:22,107 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: defer
+2025-05-27 16:31:22,107 INFO    SenderThread:24112 [sender.py:send_request_defer():609] handle sender defer: 14
+2025-05-27 16:31:22,107 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: poll_exit
+2025-05-27 16:31:22,107 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: poll_exit
+2025-05-27 16:31:22,107 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: server_info
+2025-05-27 16:31:22,107 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: poll_exit
+2025-05-27 16:31:22,107 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: get_summary
+2025-05-27 16:31:22,107 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: poll_exit
+2025-05-27 16:31:22,107 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: sampled_history
+2025-05-27 16:31:22,107 DEBUG   SenderThread:24112 [sender.py:send_request():405] send_request: server_info
+2025-05-27 16:31:22,107 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: internal_messages
+2025-05-27 16:31:22,297 INFO    MainThread:24112 [wandb_run.py:_footer_history_summary_info():3994] rendering history
+2025-05-27 16:31:22,297 INFO    MainThread:24112 [wandb_run.py:_footer_history_summary_info():4026] rendering summary
+2025-05-27 16:31:22,297 INFO    MainThread:24112 [wandb_run.py:_footer_sync_info():3953] logging synced files
+2025-05-27 16:31:22,297 DEBUG   HandlerThread:24112 [handler.py:handle_request():158] handle_request: shutdown
+2025-05-27 16:31:22,297 INFO    HandlerThread:24112 [handler.py:finish():882] shutting down handler
+2025-05-27 16:31:23,119 INFO    WriterThread:24112 [datastore.py:close():296] close: C:\Users\daopr\Desktop\OFDM\OFDM_resource_allocation\wandb\run-20250527_163117-tndyg2xy\run-tndyg2xy.wandb
+2025-05-27 16:31:23,301 INFO    SenderThread:24112 [sender.py:finish():1545] shutting down sender
+2025-05-27 16:31:23,301 INFO    SenderThread:24112 [file_pusher.py:finish():169] shutting down file pusher
+2025-05-27 16:31:23,301 INFO    SenderThread:24112 [file_pusher.py:join():175] waiting for file pusher
