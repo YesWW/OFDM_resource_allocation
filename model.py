@@ -52,7 +52,11 @@ class AC(nn.Module):
         
         global_mean = global_mean_pool(x=x, batch=batch)
         value = self._critic_linear(global_mean)[:, 0]
-        link_emb = x[link_rb[:,0]]
+        link_idx = link_rb[:,0]
+        batch_idx = torch.arange(link_rb.size(0))
+        node_idx = ptr[batch_idx] + link_idx
+
+        link_emb = x[node_idx]
         rb_emb = self._rb_emb(link_rb[:,1])
         x = torch.cat([global_mean, link_emb, rb_emb], dim=1)
         logit = self._actor_linear(x)   # [batch, power*beam]

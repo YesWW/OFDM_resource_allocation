@@ -115,19 +115,31 @@ class ExpertDataset(Dataset):
 
     def __getitem__(self, idx):
         g_idx, t, b = self.index_table[idx]
-        g = self.graphs[g_idx]
-        t_tensor = self.targets[g_idx]        # [B, L, R]
-        power_alloc = self.powers[g_idx][t]  # [N, R, P]
-        beam_alloc  = self.beams[g_idx][t]   # [N, R, B]
-        link_rb = self.link_rbs[g_idx][t][b] # [2]
-        ptr = g.ptr
+        # g = self.graphs[g_idx]
+        # t_tensor = self.targets[g_idx]        # [B, L, R]
+        # power_alloc = self.powers[g_idx][t]  # [N, R, P]
+        # beam_alloc  = self.beams[g_idx][t]   # [N, R, B]
+        # link_rb = self.link_rbs[g_idx][t][b] # [2]
+        # ptr = g.ptr
+        g_batch = self.graphs[g_idx]
+        graph = g_batch.to_data_list()[b]
 
+        t_batch = self.targets[g_idx]        # [B, L, R]
+        tt = t_batch[b]
+        
+        ptr = g_batch.ptr
+
+        power_alloc = self.powers[g_idx][t][ptr[b]:ptr[b+1]]  # [L, R, B]
+        beam_alloc  = self.beams[g_idx][t][ptr[b]:ptr[b+1]]   # [L, R, B]
+        link_rb = self.link_rbs[g_idx][t][b] # [2]
+        
+    
         # target label
         link, rb = link_rb
-        target = t_tensor[b][link][rb]
+        target = tt[link][rb]
 
         return {
-            'graph': g,
+            'graph': graph,
             'power_alloc': power_alloc,
             'beam_alloc': beam_alloc,
             'link_rb': link_rb,
@@ -135,15 +147,16 @@ class ExpertDataset(Dataset):
         }
 
 def collate_fn_il(batch):
-    graph = batch[0]['graph']
-    batch_graph = Batch.from_data_list(graph.to_data_list())  # 동일 graph_batch 공유
+    graphs = [b['graph'] for b in batch]
+    batch_graph = Batch.from_data_list(graphs)  # 동일 graph_batch 공유
+
 
     out = {
         'graph': batch_graph,
-        'power_alloc': torch.stack([b['power_alloc'] for b in batch]),  # [B', N, R, P]
-        'beam_alloc': torch.stack([b['beam_alloc'] for b in batch]),    # [B', N, R, B]
-        'link_rb': torch.stack([b['link_rb'] for b in batch]),          # [B', 2]
-        'target': torch.stack([b['target'] for b in batch])             # [B']
+        'power_alloc': torch.cat([b['power_alloc'] for b in batch], dim=0),  # [N', R, P]
+        'beam_alloc': torch.cat([b['beam_alloc'] for b in batch], dim=0),    # [N', R, B]
+        'link_rb': torch.stack([b['link_rb'] for b in batch], dim=0),          # [B', 2]
+        'target': torch.stack([b['target'] for b in batch], dim=0)             # [B']
     }
 
     return out

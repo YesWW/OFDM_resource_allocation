@@ -514,38 +514,31 @@ class trainer:
         il_epochs = self._config.get('train.il_epochs', 20)
 
         for epoch in range(il_epochs):
-            for batch_idx, (g2, joint_alloc) in enumerate(dataloader):
-                g2 = g2.to(self._device)
-                joint_alloc = joint_alloc.to(self._device)  # [B, link, rb]
-                link_rb_idx = self.get_order(g2)  # [B, L*RB, 2]
-
-                num_nodes = g2.x.size(0)
-                power_alloc = torch.zeros((num_nodes, self._num_rb, self._num_power_level), device=self._device)
-                beam_alloc  = torch.zeros((num_nodes, self._num_rb, self._num_beam), device=self._device)
-
+            for batch_idx, b in enumerate(dataloader):
+                g2 = b['graph'].to(self._device)
+                target = b['target'].to(self._device)
+                power_alloc = b['power_alloc'].to(self._device)
+                beam_alloc = b['beam_alloc'].to(self._device)
+                link_rb = b['link_rb'].to(self._device)
+                target = F.one_hot(target.long(), num_classes=self._num_power_level * self._num_beam).to(self._device)
                 total_loss = 0
-                for step in range(link_rb_idx.size(1)):
-                    link_rb = link_rb_idx[:, step, :]  # [B, 2]
-                    batch_indices = torch.arange(link_rb.size(0), device=self._device)
 
-                    # expert label: [B]
-                    target = joint_alloc[batch_indices, link_rb[:, 0], link_rb[:, 1]]
 
-                    _, _, _, _, logit = self._ac(
-                        power_alloc, beam_alloc,
-                        node_power_attn=g2.x, edge_power_attn=g2.edge_attr,
-                        edge_index=g2.edge_index, ptr=g2.ptr, batch=g2.batch, link_rb=link_rb)
+                _, _, _, _, logit = self._ac(
+                    power_alloc=power_alloc, beam_alloc=beam_alloc,
+                    node_power_attn=g2.x, edge_power_attn=g2.edge_attr,
+                    edge_index=g2.edge_index, ptr=g2.ptr, batch=g2.batch, link_rb=link_rb)
 
-                    loss = F.cross_entropy(logit, target)
-                    ac_optimizer.zero_grad()
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(self._ac.parameters(), self._clip_max_norm)
-                    ac_optimizer.step()
+                loss = F.cross_entropy(logit, target.float())
+                ac_optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self._ac.parameters(), self._clip_max_norm)
+                ac_optimizer.step()
 
-                    total_loss += loss.item()
-                    train_step += 1
-                    if use_wandb:
-                        wandb.log({"train/step": train_step, "train/il_loss": loss.item()})
+                total_loss += loss.item()
+                train_step += 1
+                if use_wandb:
+                    wandb.log({"train/step": train_step, "train/il_loss": loss.item()})
 
                 print(f"[Epoch {epoch+1} | Batch {batch_idx+1}] Total IL loss: {total_loss:.4f}")
 
@@ -572,5 +565,5 @@ if __name__ == '__main__':
     #tn.train_bc(use_wandb=True, save_model=True)
     #tn.train(use_wandb=False, save_model=True)
     #tn.generate_expert_dataset()
-    tn.train_bc_from_dataset_batch(use_wandb=False, save_model=True)
+    tn.train_bc_from_dataset_batch(use_wandb=True, save_model=True)
     print(1)
