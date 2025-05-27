@@ -10,8 +10,8 @@ import cupy as cp
 
 
 class OFDMSimulator:
-    def __init__(self, data_dir, tx_power_range, max_bs_power, noise_spectral_density=-174.0, alpha=1.0, num_rb=4,
-                 num_ue_range=None, gpu=False):
+    def __init__(self, data_dir, tx_power_range, max_bs_power, noise_spectral_density=-174.0, alpha=1.0,
+                 num_ue_range=None, gpu=False, num_rb=4):
         self.data_dir = Path(__file__).parents[0].resolve() / data_dir
         self.file_list = [os.path.join(self.data_dir, f)
                           for f in os.listdir(self.data_dir) if f.endswith('.pkl') and f != 'background.pkl']
@@ -238,15 +238,15 @@ if __name__ == '__main__':
     # print(1)
     #
     # Calculating performance target test
-    networks = net.get_networks(num_networks=16)
-    solutions = net.generate_random_solution(networks=networks)
-    for i in range(16):
-        print(net.is_solution_feasible(networks[i], solutions[i]))
+    # networks = net.get_networks(num_networks=16)
+    # solutions = net.generate_random_solution(networks=networks)
+    # for i in range(16):
+    #     print(net.is_solution_feasible(networks[i], solutions[i]))
     # opt_tgt = net.get_optimization_target(networks[0], solutions[0])
     # feasible = net.is_solution_feasible(networks[0], solutions[0])
 
     # # Generate evaluation dataset
-    # net.generate_evaluation_networks(10)
+    net.generate_evaluation_networks(10)
     # eval_file_list = net.get_evaluation_networks_file_list()
     # network = net.get_evaluation_network(eval_file_list[0])
     # net.plot(network)
