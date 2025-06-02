@@ -2,12 +2,13 @@
 sim.data_dir: myeongdong_arr_4_rb_16
 sim.tx_power_range:
   max_power: 2
-  num_power_level: 4 #16
+  num_power_level: 16 #16
 sim.max_bs_power: 10
 sim.noise_spectral_density: -174.0
 sim.alpha: 0.0
 sim.num_ue_range: [20, 40] #[50, 100]
 sim.gpu: True
+sim.num_rb: 16
 
 # power attenuation data
 power_attn.min: -200
@@ -27,17 +28,16 @@ train.num_action_iter: 100
 train.num_graph_repeat: 10000  # original 10000
 train.train_dataset: 'train_OFDM'
 train.eval_dataset: 'test_OFDM'
-train.graph_batch_size: 64 # Set it to 1 for checking Tabu Search Implementation
+train.graph_batch_size: 16 # Set it to 1 for checking Tabu Search Implementation
 train.gamma: 0.99  # reward discount factor
 train.lambda: 0.9  # parameter for lambda return (0: TD, 1: MC)
-train.buffer_batch_size: 128 
+train.buffer_batch_size: 32
 train.ac_lr: 0.0003  # actor critic learning rate
 
 train.rollout_batch_size: 16 #16
 train.min_attn_db: -200
 train.max_attn_db: -50
 train.power_attn.num_level: 151
-train.num_rb: 16
 train.num_antenna: 4
 
 # ppo params

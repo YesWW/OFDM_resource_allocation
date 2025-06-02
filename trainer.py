@@ -9,7 +9,7 @@ import torch.nn as nn
 from torch_geometric.data import Data, Batch
 from torch_geometric.loader import DataLoader
 from torch_geometric.utils import degree
-from ofdm_simulator.ofdm_simulator_4 import OFDMSimulator
+from ofdm_simulator.ofdm_simulator_rb import OFDMSimulator
 from model import AC
 from utility import Buffer, get_buffer_dataloader
 import wandb
@@ -121,7 +121,7 @@ class trainer:
         g2 = self.quantize_power_attn(g)
         unallocated_rb = torch.full(size=(num_node, self._num_rb), fill_value=True).to(self._device)
         ongoing = torch.full(size=(batch_size,), fill_value=True).to(self._device)
-
+        
         power_alloc_buf = [] 
         beam_alloc_buf = []
         action_buf = []
@@ -133,8 +133,9 @@ class trainer:
 
         with torch.no_grad():
             while torch.any(ongoing):
-                act_dist, value = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc,
-                                           node_power_attn=g2.x, edge_power_attn=g2.edge_attr, edge_index=g2.edge_index, ptr=ptr, batch=batch)
+                logit_mask = self.get_masking(networks, power_alloc, batch)
+                act_dist, value = self._ac(power_alloc=power_alloc, beam_alloc=beam_alloc, node_power_attn=g2.x, edge_power_attn=g2.edge_attr,
+                                          edge_index=g2.edge_index, ptr=ptr, batch=batch, logit_mask=logit_mask)
                 action = act_dist.sample()
                 act_log_prob = act_dist.log_prob(action)
 
@@ -150,25 +151,30 @@ class trainer:
                 for idx, act in enumerate(action):
                     if ongoing[idx]:
                         link, rb, power, beam = act
-                        ptr_link = ptr[idx] + link
+                        if link == -1 and rb == -1 and power == -1 and beam == -1:
+                            ongoing[idx] = False
+                            target_score = 0
+                        else:
 
-                        power_alloc[ptr_link][rb][power] = 1.0
+                            ptr_link = ptr[idx] + link
 
-                        beam_alloc[ptr_link][rb][beam] = 1.0
+                            power_alloc[ptr_link][rb][power] = 1.0
 
-                        unallocated_rb[ptr_link][rb] = False
+                            beam_alloc[ptr_link][rb][beam] = 1.0
 
-                        ongoing_alloc = torch.any(unallocated_rb[ptr[idx]: ptr[idx+1]])
-                        power_solution = torch.argmax(power_alloc[ptr[idx]:ptr[idx+1],:], dim=-1).cpu().numpy()
-                        beam_solution = torch.argmax(beam_alloc[ptr[idx]:ptr[idx+1],:], dim=-1).cpu().numpy()
-                        solution = {'power_level' : power_solution, 'beam_index' : beam_solution}
-                        is_feasible = self._sim.is_solution_feasible(networks[idx], solution)
-                        target_score = float(self._sim.get_optimization_target(networks[idx], solution))
-                        ongoing[idx] = ongoing_alloc & torch.tensor(bool(is_feasible), dtype=torch.bool, device=self._device)
+                            unallocated_rb[ptr_link][rb] = False
+
+                            ongoing_alloc = torch.any(unallocated_rb[ptr[idx]: ptr[idx+1]])
+                            power_solution = torch.argmax(power_alloc[ptr[idx]:ptr[idx+1],:], dim=-1).cpu().numpy()
+                            beam_solution = torch.argmax(beam_alloc[ptr[idx]:ptr[idx+1],:], dim=-1).cpu().numpy()
+                            solution = {'power_level' : power_solution, 'beam_index' : beam_solution}
+                            target_score = float(self._sim.get_optimization_target(networks[idx], solution))
+                            ongoing[idx] = ongoing_alloc
                     else:
                         target_score = 0
                     target.append(target_score)
                 target_buf.append(torch.Tensor(target))
+
         # store all of the interactions
         power_alloc_buf = torch.stack(power_alloc_buf, dim=0)
         beam_alloc_buf = torch.stack(beam_alloc_buf, dim=0)
@@ -228,16 +234,12 @@ class trainer:
                                             torch.minimum(act_prob_ratio, 1 + self._PPO_clip),
                                             torch.maximum(act_prob_ratio, 1 - self._PPO_clip))
                 actor_loss = -(actor_loss * advantage)
-                ####
-                #actor_loss = torch.mean(actor_loss[valid_mask])
                 actor_loss = torch.mean(actor_loss)
-                
-                entropy_loss = -torch.mean(act_dist.entropy())
-                #entropy_loss = -torch.mean(entropy)
 
-                #value_loss = nn.MSELoss()(value[valid_mask], lambda_return[valid_mask])
+                entropy_loss = -torch.mean(act_dist.entropy())
+
                 value_loss = nn.MSELoss()(value, lambda_return)
-                ####
+
                 total_loss = actor_loss + self._entropy_loss_weight * entropy_loss + self._value_loss_weight * value_loss
                 ac_optimizer.zero_grad()
                 total_loss.backward()
@@ -320,6 +322,27 @@ class trainer:
         path = Path(__file__).parents[0].resolve() / 'saved_model'
         self._ac.load_state_dict(torch.load(path / 'ac.pt')) 
 
+
+    def get_masking(self, networks, power_alloc, batch):
+        tx_power = torch.tensor(self._sim.tx_power, device=self._device)
+        max_bs_power = self._sim.max_bs_power
+        assoc = torch.cat([torch.tensor(network['assoc'], device=self._device) for network in networks], dim=0)
+
+        node_power = (power_alloc * tx_power.view(1, 1, -1)).sum(dim=(1, 2))  # [num_node]
+
+        bs_power = torch.zeros(batch.max() + 1, self._num_bs, device=self._device)  # [batch_size, num_bs]
+        bs_idx = batch * self._num_bs + assoc  # [num_node] 
+        bs_power_flat = bs_power.view(-1)  # [(batch_size * num_bs)]
+        bs_power_flat = bs_power_flat.index_add(0, bs_idx, node_power.float()) 
+        bs_power = bs_power_flat.view(-1, self._num_bs)  
+
+        projected_power = bs_power[batch, assoc].view(-1, 1, 1, 1) + tx_power.view(1, 1, -1, 1)
+        valid_mask = projected_power <= max_bs_power  # [num_node, num_rb, num_power_level, num_beam]
+        valid_mask[:, :, 0, :] = True
+
+        unterminated_mask = (torch.sum(power_alloc, dim=2) < 1.0)[:, :, None, None]  # [num_node, num_rb, 1, 1]
+        logit_mask = valid_mask & unterminated_mask  
+        return logit_mask.squeeze(-1)
 
 if __name__ == '__main__':
     device = 'cuda:0'

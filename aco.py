@@ -1,7 +1,7 @@
 import numpy as np
 import random
 import time
-from ofdm_simulator.ofdm_simulator_4 import OFDMSimulator
+from ofdm_simulator.ofdm_simulator_rb import OFDMSimulator
 import matplotlib.pyplot as plt
 import torch
 import cupy as cp

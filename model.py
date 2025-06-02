@@ -29,8 +29,9 @@ class AC(nn.Module):
             dim_feedforward=self._dim_feedforward, dropout=self._dropout,
             activation="relu", device=self._device
         )
-        self._actor_linear = Linear(self._d_model, self._num_rb * self._num_power_level * self._num_beam, device=device)
+        self._actor_linear = Linear(self._d_model * 2, self._num_power_level * self._num_beam, device=device)
         self._critic_linear = Linear(self._d_model, 1, device=device)
+        self._rb_embedding = nn.Embedding(num_embeddings=num_rb, embedding_dim=self._d_model, device=device)
 
         self._reset_parameters()
 
@@ -40,7 +41,7 @@ class AC(nn.Module):
         nn.init.xavier_uniform_(self._critic_linear.weight)
         nn.init.constant_(self._critic_linear.bias, 0.)
 
-    def forward(self, power_alloc, beam_alloc, node_power_attn, edge_power_attn, edge_index, ptr, batch):
+    def forward(self, power_alloc, beam_alloc, node_power_attn, edge_power_attn, edge_index, ptr, batch, logit_mask=None):
         resource_alloc = torch.cat([power_alloc, beam_alloc], dim=2).reshape(power_alloc.size(0), -1)
         node_power_attn = node_power_attn.reshape(node_power_attn.size(0), -1)
         edge_power_attn = edge_power_attn.reshape(edge_power_attn.size(0), -1)
@@ -50,24 +51,35 @@ class AC(nn.Module):
         value = global_mean_pool(x=x, batch=batch)
         value = self._critic_linear(value)[:, 0]
 
+        used_rb_mask = torch.sum(power_alloc, dim=2) > 0
+        next_rb = ~used_rb_mask * torch.arange(self._num_rb, device=self._device).to(float)
+        next_rb[used_rb_mask] = torch.inf
+        next_rb_idx = torch.argmin(next_rb, dim=1) # num_node
+        rb = self._rb_embedding(next_rb_idx) 
+
+        x = torch.cat([x, rb], dim=1)
+
         logit = self._actor_linear(x)
-        logit = logit.reshape(power_alloc.size(0), self._num_rb, self._num_power_level, self._num_beam)
+        logit = logit.reshape(power_alloc.size(0), self._num_power_level, self._num_beam)
+        
+        
+        if logit_mask is not None:
+            rb_indices = next_rb_idx.view(-1, 1, 1).expand(-1, 1, logit_mask.size(2))
+            logit_mask = torch.gather(logit_mask, dim=1, index=rb_indices).squeeze(1).unsqueeze(-1)
+            logit = torch.where(logit_mask, logit, other=-torch.inf)
 
-        unterminated_mask = (torch.sum(power_alloc, dim=2) < 1.0)
-        unterminated_mask = unterminated_mask[:, :, None, None]
-        logit = torch.where(condition=unterminated_mask, input=logit, other=-torch.inf)
+        act_dist = ActDist(logit, ptr, next_rb_idx, device=self._device)
 
-        act_dist = ActDist(logit, ptr, device=self._device)
         return act_dist, value
 
 class ActDist:
-    def __init__(self, logit, ptr, device):
+    def __init__(self, logit, ptr, rb_idx, device):
         self._device = device
         self._ptr = ptr
+        self._rb_idx = rb_idx
         self._batch_size = int(ptr.shape[0]) - 1
-        self._num_rb = logit.size(1)
-        self._num_power_level = logit.size(2)
-        self._num_beam = logit.size(3)
+        self._num_power_level = logit.size(1)
+        self._num_beam = logit.size(2)
         
         self._dist_list = []
         for idx in range(self._batch_size):
@@ -81,15 +93,15 @@ class ActDist:
 
     def sample(self):
         action = []
-        for dist in self._dist_list:
+        for i, dist in enumerate(self._dist_list):
             if dist is not None:
                 idx = int(dist.sample())
-                node = idx // (self._num_rb * self._num_power_level *self._num_beam)
-                rbbp = idx % (self._num_rb * self._num_power_level *self._num_beam )
-                rb = rbbp // (self._num_power_level *self._num_beam)
-                bp = rbbp % (self._num_power_level * self._num_beam)
-                power = bp // self._num_beam
-                beam = bp % self._num_beam
+                node = idx // (self._num_power_level *self._num_beam)
+                pow_beam = idx % (self._num_power_level *self._num_beam )
+                power = pow_beam // (self._num_beam)
+                beam = pow_beam % (self._num_beam)
+
+                rb = int(self._rb_idx[self._ptr[i] + node].item())
             else:
                 node, rb, power, beam = -1, -1, -1, -1
             action.append([node, rb, power, beam])
@@ -109,7 +121,7 @@ class ActDist:
         for a, dist in zip(action, self._dist_list):
             if dist is not None:
                 node, rb, power, beam = a
-                idx = node * self._num_rb * self._num_beam * self._num_power_level + rb * self._num_beam * self._num_power_level +  power * self._num_beam + beam
+                idx = node * self._num_beam * self._num_power_level +  power * self._num_beam + beam
                 lp.append(dist.log_prob(idx))
             else:
                 lp.append(torch.tensor(-torch.inf).to(self._device))
