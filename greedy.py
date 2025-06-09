@@ -48,7 +48,7 @@ class GreedySolverOFDM:
 
         best_perf = self._sim.get_optimization_target(network, solution)
         best_solution = solution.copy()
-        output = []
+        #output = []
 
         for it in range(num_ue):
             candidate_solutions = self.get_all_moves(solution, num_ue)
@@ -61,13 +61,13 @@ class GreedySolverOFDM:
                     best_solution = cand
             solution = best_solution
             iter_time = time.perf_counter() - start
-            output.append([it, best_perf, iter_time])
-            print(f"Iteration {it} | Num ue :{num_ue} | Target: {best_perf:.4f}, Time: {iter_time:.2f}s")
+            #output.append([it, best_perf, iter_time])
+            #print(f"Iteration {it} | Num ue :{num_ue} | Target: {best_perf:.4f}, Time: {iter_time:.2f}s")
 
         elapsed = time.perf_counter() - start
-        result_path = Path(__file__).parents[0] / 'evaluation_results' / 'result_greedy_ofdm.csv'
-        result_path.parent.mkdir(exist_ok=True)
-        pd.DataFrame(output, columns=['iter', 'target', 'time']).to_csv(result_path, index=False)
+        #result_path = Path(__file__).parents[0] / 'evaluation_results' / 'result_greedy_ofdm.csv'
+        #result_path.parent.mkdir(exist_ok=True)
+        #pd.DataFrame(output, columns=['iter', 'target', 'time']).to_csv(result_path, index=False)
         return best_perf, elapsed, best_solution
 
     def get_all_moves(self, solution, num_ue):
@@ -94,7 +94,7 @@ if __name__ == '__main__':
     max_bs_power = 10
     noise_spectral_density = -174.0
     alpha = 0.0
-    num_ue_range = [50, 100]
+    num_ue_range = [60, 100]
     gpu = True
 
     alg = GreedySolverOFDM(data_dir=data_dir,

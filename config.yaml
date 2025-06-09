@@ -6,7 +6,7 @@ sim.tx_power_range:
 sim.max_bs_power: 10
 sim.noise_spectral_density: -174.0
 sim.alpha: 0.0
-sim.num_ue_range: [20, 40] #[50, 100]
+sim.num_ue_range: [60, 100] #[50, 100]
 sim.gpu: True
 sim.num_rb: 16
 
@@ -34,7 +34,7 @@ train.lambda: 0.9  # parameter for lambda return (0: TD, 1: MC)
 train.buffer_batch_size: 32
 train.ac_lr: 0.0003  # actor critic learning rate
 
-train.rollout_batch_size: 16 #16
+train.rollout_batch_size: 32 #16
 train.min_attn_db: -200
 train.max_attn_db: -50
 train.power_attn.num_level: 151

@@ -215,7 +215,7 @@ class OFDMSimulator:
 
 if __name__ == '__main__':
     data_dir = 'myeongdong_arr_4_rb_16'
-    num_ue_range = [20, 40]  # Minimum and maximum number of UEs (randomly selected within range)
+    num_ue_range = [60, 80]  # Minimum and maximum number of UEs (randomly selected within range)
     tx_power_range = {'max_power': 2, 'num_power_level': 16}#16}  # Power level quantization
     max_bs_power = 10  # Maximum base station tx power (watt)
     noise_spectral_density = -174.0  # Noise spectral density (dBm/Hz)

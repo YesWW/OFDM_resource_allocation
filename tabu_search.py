@@ -1,7 +1,7 @@
 import numpy as np
 import random
 import time
-from ofdm_simulator.ofdm_simulator_rb import OFDMSimulator
+from ofdm_simulator.ofdm_simulator import OFDMSimulator
 import pandas as pd
 
 class TabuSearch:
@@ -33,7 +33,7 @@ class TabuSearch:
         return perf, elapsed_time, solution
 
     def solve(self, network):
-        log_path = "tabu_log.csv"
+        # log_path = "tabu_log.csv"
         start = time.perf_counter()
         ch = network['ch']
         num_link = ch.shape[0]
@@ -41,7 +41,7 @@ class TabuSearch:
         all_moves = self.get_all_moves(num_link)
         cur_solution = self.get_initial_solution(num_link)
         best_solution, best_perf = None, -np.inf
-        log_data = []
+        # log_data = []
         for it in range(self._tabu_max_iterations):
             cand_moves, cand_solutions = self.apply_move(cur_solution, all_moves)
             selected_solution, selected_move, selected_perf = None, None, -np.inf
@@ -58,20 +58,20 @@ class TabuSearch:
             cur_solution = selected_solution
             tabu_list[selected_move] = self._tabu_tenure
             tabu_list = {move:(tenure - 1) for move, tenure in tabu_list.items() if tenure > 1}
-            print(f"iteration: {it}, performance: {best_perf}")
-            elapsed_time = time.perf_counter() - start
-            log_data.append({
-                "iteration": it,
-                "elapsed_time_sec": elapsed_time,
-                "best_performance": best_perf,
-                })
-        df_p = pd.DataFrame(cur_solution['power_level'])
-        df_b = pd.DataFrame(cur_solution['beam_index'])
-        df_p.to_csv("power_level_result.csv")
-        df_b.to_csv("beam_index_result.csv")
+            # print(f"iteration: {it}, performance: {best_perf}")
+            # elapsed_time = time.perf_counter() - start
+            # log_data.append({
+            #     "iteration": it,
+            #     "elapsed_time_sec": elapsed_time,
+            #     "best_performance": best_perf,
+            #     })
+        # df_p = pd.DataFrame(cur_solution['power_level'])
+        # df_b = pd.DataFrame(cur_solution['beam_index'])
+        # df_p.to_csv("power_level_result.csv")
+        # df_b.to_csv("beam_index_result.csv")
         end = time.perf_counter()
-        df_log = pd.DataFrame(log_data)
-        df_log.to_csv(log_path, index=False)
+        # df_log = pd.DataFrame(log_data)
+        # df_log.to_csv(log_path, index=False)
         total_elapsed_time = end - start
         return best_perf, total_elapsed_time, best_solution
 
@@ -104,7 +104,7 @@ class TabuSearch:
 
 if __name__ == '__main__':
     data_dir = 'myeongdong_arr_4_rb_16'
-    tx_power_range = {'max_power': 2, 'num_power_level': 4}  # Power level quantization
+    tx_power_range = {'max_power': 2, 'num_power_level': 16}  # Power level quantization
     max_bs_power = 10  # Maximum base station tx power (watt)
     noise_spectral_density = -174.0  # Noise spectral density (dBm/Hz)
     alpha = 0.0  # coefficient for alpha-fairness function (0.0: sum, 1.0: proportional, inf: max-min)
@@ -114,7 +114,8 @@ if __name__ == '__main__':
     tabu_tenure = 100
     alg = TabuSearch(data_dir, tx_power_range, max_bs_power, noise_spectral_density, alpha,
                      tabu_move_selection_prob, tabu_max_iterations, tabu_tenure, gpu)
-    perf, elapsed_time, solution = alg.solve_evaluation_network(0)
+    #perf, elapsed_time, solution = alg.solve_evaluation_network(0)
+    perf, elapsed_time = alg.solve_all_evaluation_networks()
     print(f'Performance: {perf}, Elapsed time: {elapsed_time}')
 
 
