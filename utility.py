@@ -92,5 +92,40 @@ def get_buffer_dataloader(buf, batch_size, shuffle=True):
     return dataloader
 
 
+class ExpertStepDataset(Dataset):
+    def __init__(self, step_list):
+        self.data = step_list
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        item = self.data[idx]
+        return {
+            'graph': item['graph'],
+            'power_alloc': item['power_alloc'],
+            'beam_alloc': item['beam_alloc'],
+            'link': item['link'],
+            'rb': item['rb'],
+            'target': item['target']
+        }
+
+def collate_fn_step(batch):
+    graphs = [b['graph'] for b in batch]
+    batch_graph = Batch.from_data_list(graphs)
+
+    return {
+        'graph': batch_graph,
+        'power_alloc': torch.cat([b['power_alloc'] for b in batch], dim=0),  # [N', RB, P]
+        'beam_alloc': torch.cat([b['beam_alloc'] for b in batch], dim=0),    # [N', RB, B]
+        'link': torch.tensor([b['link'] for b in batch]),                    # [B]
+        'rb': torch.tensor([b['rb'] for b in batch]),                        # [B]
+        'target': torch.tensor([b['target'] for b in batch])                # [B]
+    }
+
+def get_step_dataloader(step_list, batch_size, shuffle=True):
+    dataset = ExpertStepDataset(step_list)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_fn_step)
+
 if __name__ == '__main__':
     pass

@@ -11,7 +11,7 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.utils import degree
 from ofdm_simulator.ofdm_simulator_rb import OFDMSimulator
 from model import AC
-from utility import Buffer, get_buffer_dataloader
+from utility import Buffer, get_buffer_dataloader, ExpertStepDataset, get_step_dataloader
 import wandb
 import time
 
@@ -43,12 +43,7 @@ class trainer:
 
             
             
-            # train parameters
-            self._gamma = self._config['train.gamma']
-            self._lambda = self._config['train.lambda']
-            self._buffer_batch_size = self._config['train.buffer_batch_size']
-            self._ac_lr = self._config['train.ac_lr']
-
+            # train parameter
             self._rollout_batch_size = self._config['train.rollout_batch_size']
             self._min_attn_db = self._config['train.min_attn_db']
             self._max_attn_db = self._config['train.max_attn_db']
@@ -68,7 +63,7 @@ class trainer:
             self._entropy_loss_weight = self._config['train.entropy_loss_weight']
             self._value_loss_weight =  self._config['train.value_loss_weight']
 
-            self._PPO_clip = torch.Tensor([self._config['train.PPO_clip']]).to(torch.float).to(self._device)
+            self._PPO_clip = torch.tensor(self._config['train.PPO_clip'], dtype=torch.float, device=self._device)
             self._act_prob_ratio_exponent_clip = self._config['train.act_prob_ratio_exponent_clip']
             self._eval_period = self._config['train.eval_period']    
             self._eval_batch_size = self._config['train.eval_batch_size']
@@ -300,18 +295,18 @@ class trainer:
             #wandb.log({'cir': wandb.Image(fig)})
 
 
-    def save_model(self, use_wandb=False):
-        '''Save the actor_critic weights
-
-        Args:
-            use_wandb (bool): save it on wandb platform
- 
-        '''
-        if use_wandb:
-            path = Path(wandb.run.dir)
+    def save_model(self, save_dir=None, filename='ac.pt', use_wandb=False):
+        '''Save the actor_critic weights'''
+        if save_dir is None:
+            if use_wandb:
+                path = Path(wandb.run.dir)
+            else:
+                path = Path(__file__).parents[0].resolve() / 'saved_model'
         else:
-            path = Path(__file__).parents[0].resolve() / 'saved_model'
-        torch.save(self._ac.state_dict(), path / 'ac.pt')
+            path = Path(save_dir)
+
+        path.mkdir(parents=True, exist_ok=True)
+        torch.save(self._ac.state_dict(), path / filename)
 
 
     def load_model(self):
@@ -343,10 +338,155 @@ class trainer:
         unterminated_mask = (torch.sum(power_alloc, dim=2) < 1.0)[:, :, None, None]  # [num_node, num_rb, 1, 1]
         logit_mask = valid_mask & unterminated_mask  
         return logit_mask.squeeze(-1)
+    
+
+    def load_expert_data(self, file_path, shuffle_step_order=True):
+        expert_data = torch.load(file_path)
+        networks = [item['network'] for item in expert_data]
+        solutions = [item['solution'] for item in expert_data]
+
+        g_batch = self._sim.generate_pyg(networks, min_attn_db=self._min_attn_db,
+                                        max_attn_db=self._max_attn_db, device=self._device)
+        g_batch = self.quantize_power_attn(g_batch)
+        data_list = g_batch.to_data_list()
+
+        all_steps = []
+
+        for i, (net, sol) in enumerate(zip(networks, solutions)):
+            graph = data_list[i]
+            power_level = torch.tensor(sol['power_level'], dtype=torch.long)
+            beam_index = torch.tensor(sol['beam_index'], dtype=torch.long)
+            num_link, num_rb = power_level.shape
+
+            step_indices = [(l, r) for l in range(num_link) for r in range(num_rb)]
+            if shuffle_step_order:
+                np.random.shuffle(step_indices)
+
+            power_alloc = torch.zeros((num_link, num_rb, self._num_power_level))
+            beam_alloc = torch.zeros((num_link, num_rb, self._num_beam))
+
+            for link, rb in step_indices:
+                state_power = power_alloc.clone()
+                state_beam = beam_alloc.clone()
+
+                p = power_level[link, rb].item()
+                b = beam_index[link, rb].item()
+                target = p * self._num_beam + b
+
+                all_steps.append({
+                    'graph': graph,
+                    'power_alloc': state_power,
+                    'beam_alloc': state_beam,
+                    'link': link,
+                    'rb': rb,
+                    'target': target
+                })
+
+                power_alloc[link, rb, p] = 1.0
+                beam_alloc[link, rb, b] = 1.0
+
+        return all_steps
+
+
+    def train_bc(self, expert_data_path, num_epochs=10, bc_lr=1e-4, batch_size=16, use_wandb=False):
+        '''
+        Tabu Search expert data로 Behavior Cloning 학습을 수행
+
+        Args:
+            expert_data_path (str): torch 저장된 expert data 파일 경로
+            num_epochs (int): 학습 epoch 수
+            bc_lr (float): learning rate
+            batch_size (int): 배치 크기
+        '''
+
+        print("Loading expert data...")
+        step_list = self.load_expert_data(expert_data_path)
+        dataloader = get_step_dataloader(step_list, batch_size=batch_size, shuffle=True)
+        optimizer = torch.optim.Adam(self._ac.parameters(), lr=bc_lr)
+        self._ac.train()
+        if use_wandb:
+            wandb.init(project="OFDM_resource_allocation_IL", config=self._config)
+            wandb.define_metric("train/epoch")
+            wandb.define_metric("train/*", step_metric="train/epoch")
+            wandb.define_metric("evaluate/*", step_metric="train/epoch")
+            
+        print("Start Behavior Cloning training...")
+        for epoch in range(num_epochs):
+            epoch_loss = 0.0
+
+            for batch in dataloader:
+                g = batch['graph'].to(self._device)
+                power_alloc = batch['power_alloc'].to(self._device)
+                beam_alloc = batch['beam_alloc'].to(self._device)
+                link = batch['link'].to(self._device)
+                rb = batch['rb'].to(self._device)
+                target = batch['target'].to(self._device)
+
+                act_dist, _ = self._ac(
+                    power_alloc=power_alloc,
+                    beam_alloc=beam_alloc,
+                    node_power_attn=g.x,
+                    edge_power_attn=g.edge_attr,
+                    edge_index=g.edge_index,
+                    ptr=g.ptr,
+                    batch=g.batch
+                )  # logit: [N, P, B]
+                logit = act_dist._logit
+                # (link, rb) 위치의 logit만 추출
+                graph_idx = torch.arange(link.size(0), device=link.device)
+                link_global = g.ptr[graph_idx] + link
+                selected_logits = logit[link_global]  # [B, P, B]
+                selected_logits = selected_logits.view(link.size(0), -1)
+
+                loss = F.cross_entropy(selected_logits, target)
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                epoch_loss += loss.item()
+
+            avg_loss = epoch_loss / len(dataloader)
+            print(f"[Epoch {epoch+1}/{num_epochs}] BC Loss: {avg_loss:.6f}")
+            
+
+            if use_wandb:
+                wandb.log({"train/epoch": epoch + 1, "train/bc_loss": avg_loss})
+            
+            self.evaluate_bc(use_wandb=use_wandb)
+            self.save_model(filename=f'ac_epoch{epoch+1}.pt', use_wandb=use_wandb)
+
+
+    def evaluate_bc(self, use_wandb=False):
+        '''
+        Behavior Cloning 정책으로 평가 네트워크에 대해 성능을 측정
+        '''
+        self._ac.eval()
+
+        g = self._eval_data  # PyG batch
+        networks = self._eval_networks  # List of network dicts
+
+        # rollout은 현재 self._ac를 사용하므로 BC 학습된 policy 평가가 됨
+        buf = self.roll_out(g, networks)
+
+        buf.cal_reward()
+        target = buf._target.mean().item()
+        reward = buf.get_performance().mean().item()
+
+        print(f"[BC Evaluation] Target: {target:.4f}, Reward: {reward:.4f}")
+
+        if use_wandb:
+            wandb.log({
+                "evaluate/bc_target": target,
+                "evaluate/bc_reward": reward
+            })
+
+
 
 if __name__ == '__main__':
     device = 'cuda:0'
     tn = trainer(params_file='config.yaml', device=device)
-    tn.train(use_wandb=False, save_model=True)
+    #tn.train(use_wandb=False, save_model=True)
     #tn.evaluate()
+    tn.train_bc(expert_data_path='./expert_data.pt', num_epochs=20, use_wandb=True)
     print(1)

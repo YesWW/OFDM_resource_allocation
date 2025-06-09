@@ -80,7 +80,8 @@ class ActDist:
         self._batch_size = int(ptr.shape[0]) - 1
         self._num_power_level = logit.size(1)
         self._num_beam = logit.size(2)
-        
+        self._logit = logit
+
         self._dist_list = []
         for idx in range(self._batch_size):
             l = logit[ptr[idx]: ptr[idx + 1], :, :].to(self._device)

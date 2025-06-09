@@ -6,7 +6,7 @@ sim.tx_power_range:
 sim.max_bs_power: 10
 sim.noise_spectral_density: -174.0
 sim.alpha: 0.0
-sim.num_ue_range: [60, 100] #[50, 100]
+sim.num_ue_range: [60, 80] #[50, 100]
 sim.gpu: True
 sim.num_rb: 16
 
