@@ -6,6 +6,7 @@ from torch.nn.init import xavier_uniform_, constant_
 from torch.distributions.categorical import Categorical
 from torch_geometric.nn import TransformerConv
 from torch_geometric.nn.pool import global_mean_pool
+from torch_geometric.utils import to_dense_batch
 
 class AC(nn.Module):
     def __init__(self, num_power_level, num_rb, num_beam, power_attn_num_level, model_params, device):
@@ -26,52 +27,134 @@ class AC(nn.Module):
             embedding_dim=self._power_attn_num_level * self._num_rb * self._num_beam,
             num_layers=self._num_layers, d_model=self._d_model, n_head=self._n_head,
             edge_dim=self._power_attn_num_level * self._num_rb * self._num_beam,
-            dim_feedforward=self._dim_feedforward, dropout=self._dropout,
-            activation="relu", device=self._device
+            dim_feedforward=self._dim_feedforward,
+            dropout=self._dropout,
+            activation="relu",
+            device=self._device
         )
-        self._actor_linear = Linear(self._d_model * 2, self._num_power_level * self._num_beam, device=device)
-        self._critic_linear = Linear(self._d_model, 1, device=device)
-        self._rb_embedding = nn.Embedding(num_embeddings=num_rb, embedding_dim=self._d_model, device=device)
+        self.link_head = Linear(self._d_model, 1, device=self._device)  # output single score per link
+        self.rb_embedding = nn.Embedding(num_rb, self._d_model, device=self._device)
+        self.pb_head = nn.Sequential(
+            nn.Linear(self._d_model * 2, self._d_model, device=self._device),
+            nn.ReLU(),
+            nn.Linear(self._d_model, num_power_level * num_beam, device=self._device)
+        )
+        self.critic_head = Linear(self._d_model, 1, device=self._device)
 
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        nn.init.xavier_uniform_(self._actor_linear.weight)
-        nn.init.constant_(self._actor_linear.bias, 0.)
-        nn.init.xavier_uniform_(self._critic_linear.weight)
-        nn.init.constant_(self._critic_linear.bias, 0.)
-
-    def forward(self, power_alloc, beam_alloc, node_power_attn, edge_power_attn, edge_index, ptr, batch, logit_mask=None):
+    def forward(self, power_alloc, beam_alloc, node_power_attn, edge_power_attn, edge_index, ptr, batch):
         resource_alloc = torch.cat([power_alloc, beam_alloc], dim=2).reshape(power_alloc.size(0), -1)
         node_power_attn = node_power_attn.reshape(node_power_attn.size(0), -1)
         edge_power_attn = edge_power_attn.reshape(edge_power_attn.size(0), -1)
-        x = self._graph_transformer(input=resource_alloc, node_embedding=node_power_attn,
-                                    edge_attr=edge_power_attn, edge_index=edge_index)
-        
-        value = global_mean_pool(x=x, batch=batch)
-        value = self._critic_linear(value)[:, 0]
 
-        used_rb_mask = torch.sum(power_alloc, dim=2) > 0
-        next_rb = ~used_rb_mask * torch.arange(self._num_rb, device=self._device).to(float)
-        next_rb[used_rb_mask] = torch.inf
-        next_rb_idx = torch.argmin(next_rb, dim=1) # num_node
-        rb = self._rb_embedding(next_rb_idx) 
+        h = self._graph_transformer(input=resource_alloc, node_embedding=node_power_attn,
+                     edge_attr=edge_power_attn, edge_index=edge_index)
+        h_padded, mask = to_dense_batch(h, batch)  # [B, N_max, d_model], [B, N_max]
+        link_logits = self.link_head(h_padded).squeeze(-1)  # [B, N_max]
+        link_logits = link_logits.masked_fill(~mask, float('-inf'))
 
-        x = torch.cat([x, rb], dim=1)
+        values = self.critic_head(global_mean_pool(h, batch))[:, 0]  # [batch_size]
+        return h_padded, link_logits, values, mask
 
-        logit = self._actor_linear(x)
-        logit = logit.reshape(power_alloc.size(0), self._num_power_level, self._num_beam)
-        
-        
-        if logit_mask is not None:
-            rb_indices = next_rb_idx.view(-1, 1, 1).expand(-1, 1, logit_mask.size(2))
-            logit_mask = torch.gather(logit_mask, dim=1, index=rb_indices).squeeze(1).unsqueeze(-1)
-            logit = torch.where(logit_mask, logit, other=-torch.inf)
+    def sample(self, h_padded, link_logits, rb_idx, mask):
+        batch_size, max_nodes, d_model = h_padded.size()
 
-        act_dist = ActDist(logit, ptr, next_rb_idx, device=self._device)
+        link_logits = torch.nan_to_num(link_logits, nan=-1e9)
+        all_inf_mask = ~torch.isfinite(link_logits).any(dim=1)
 
-        return act_dist, value
+        action = torch.full((batch_size, 4), -1, dtype=torch.long, device=self._device)
+        total_log_prob = torch.full((batch_size,), -float('inf'), device=self._device)
+        entropy = torch.zeros(batch_size, device=self._device)
 
+        valid_idx = (~all_inf_mask).nonzero(as_tuple=False).squeeze(-1)
+        if valid_idx.numel() > 0:
+            mask_valid = mask[valid_idx]  # [V, N]
+            logits_valid = link_logits[valid_idx]  # [V, N]
+            h_valid = h_padded[valid_idx]  # [V, N, d_model]
+
+            dist_link = Categorical(logits=logits_valid)
+            local_node_idx = dist_link.sample()  # [V]
+
+            # (1) 벡터화된 인덱스 변환
+            flat_mask_idx = mask_valid.nonzero(as_tuple=False)  # [?, 2]
+            valid_node_idx = flat_mask_idx[:, 1]
+            counts = mask_valid.sum(dim=1)
+            ptr = torch.cat([torch.tensor([0], device=self._device), counts.cumsum(dim=0)])
+            global_node_idx = valid_node_idx[ptr[:-1] + local_node_idx]  # [V]
+
+            # (2) PB prediction
+            node_idx_exp = local_node_idx.view(-1, 1, 1).expand(-1, 1, d_model)
+            h_selected = torch.gather(h_valid, dim=1, index=node_idx_exp).squeeze(1)
+            rb_valid = rb_idx[valid_idx]
+            rb_emb = self.rb_embedding(rb_valid)
+            pb_input = torch.cat([h_selected, rb_emb], dim=-1)
+            pb_logits = self.pb_head(pb_input)
+
+            dist_pb = Categorical(logits=pb_logits)
+            pb_sample = dist_pb.sample()
+            power = pb_sample // self._num_beam
+            beam = pb_sample % self._num_beam
+
+            # (3) Build action
+            action[valid_idx, 0] = global_node_idx
+            action[valid_idx, 1] = rb_valid
+            action[valid_idx, 2] = power
+            action[valid_idx, 3] = beam
+
+            total_log_prob[valid_idx] = dist_link.log_prob(local_node_idx) + dist_pb.log_prob(pb_sample)
+            entropy[valid_idx] = dist_link.entropy() + dist_pb.entropy()
+
+        return action, total_log_prob, entropy
+
+    def log_prob(self, h_padded, link_logits, actions):
+        link = actions[:, 0]
+        rb_idx = actions[:, 1]
+        power = actions[:, 2]
+        beam = actions[:, 3]
+
+        valid_mask = (link >= 0) & (rb_idx >= 0) & (power >= 0) & (beam >= 0)
+        log_prob = torch.full((link.size(0),), -float('inf'), device=self._device)
+
+        if valid_mask.any():
+            dist_link = Categorical(logits=link_logits[valid_mask])
+            lp1 = dist_link.log_prob(link[valid_mask])
+
+            d_model = h_padded.size(-1)
+            link_idx_exp = link[valid_mask].view(-1, 1, 1).expand(-1, 1, d_model)
+            h_link = torch.gather(h_padded[valid_mask], dim=1, index=link_idx_exp).squeeze(1)
+
+            rb_emb = self.rb_embedding(rb_idx[valid_mask])
+            pb_input = torch.cat([h_link, rb_emb], dim=-1)
+            pb_logits = self.pb_head(pb_input)
+            pb_idx = power[valid_mask] * self._num_beam + beam[valid_mask]
+            dist_pb = Categorical(logits=pb_logits)
+            lp2 = dist_pb.log_prob(pb_idx)
+
+            log_prob[valid_mask] = lp1 + lp2
+
+        return log_prob
+
+    def entropy(self, h_padded, link_logits, rb_idx):
+        link_logits = torch.nan_to_num(link_logits, nan=-1e9)
+        all_inf_mask = ~torch.isfinite(link_logits).any(dim=1)
+        entropy = torch.zeros(link_logits.size(0), device=self._device)
+
+        valid_idx = (~all_inf_mask).nonzero(as_tuple=False).squeeze(-1)
+        if valid_idx.numel() > 0:
+            dist_link = Categorical(logits=link_logits[valid_idx])
+            link_idx = dist_link.sample()
+            d_model = h_padded.size(-1)
+            link_idx_exp = link_idx.view(-1, 1, 1).expand(-1, 1, d_model)
+            h_link = torch.gather(h_padded[valid_idx], dim=1, index=link_idx_exp).squeeze(1)
+
+            rb_emb = self.rb_embedding(rb_idx[valid_idx])
+            pb_input = torch.cat([h_link, rb_emb], dim=-1)
+            pb_logits = self.pb_head(pb_input)
+            dist_pb = Categorical(logits=pb_logits)
+
+            entropy[valid_idx] = dist_link.entropy() + dist_pb.entropy()
+
+        return entropy
+    
 class ActDist:
     def __init__(self, logit, ptr, rb_idx, device):
         self._device = device
