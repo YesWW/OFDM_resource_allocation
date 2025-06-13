@@ -7,9 +7,9 @@ from torch.distributions.categorical import Categorical
 from torch_geometric.nn import TransformerConv
 from torch_geometric.nn.pool import global_mean_pool
 
-class AC(nn.Module):
+class Policy(nn.Module):
     def __init__(self, num_power_level, num_rb, num_beam, power_attn_num_level, model_params, device):
-        super(AC, self).__init__()
+        super(Policy, self).__init__()
         self._device = device
         self._num_power_level = num_power_level
         self._num_rb = num_rb
@@ -29,17 +29,17 @@ class AC(nn.Module):
             dim_feedforward=self._dim_feedforward, dropout=self._dropout,
             activation="relu", device=self._device
         )
-        self._actor_linear = Linear(self._d_model * 2, self._num_power_level * self._num_beam, device=device)
-        self._critic_linear = Linear(self._d_model, 1, device=device)
-        self._rb_embedding = nn.Embedding(num_embeddings=num_rb, embedding_dim=self._d_model, device=device)
+        self._logit_linear = Linear(self._d_model, self._num_power_level * self._num_beam, device=device)
 
+        self._link_embedding = nn.Embedding(num_embeddings=num_rb, embedding_dim=self._d_model, device=device)
+        self._rb_embedding = PositionalEncoding(d_model=self._d_model, max_len=num_rb, device=device)
+
+        
         self._reset_parameters()
 
     def _reset_parameters(self):
-        nn.init.xavier_uniform_(self._actor_linear.weight)
-        nn.init.constant_(self._actor_linear.bias, 0.)
-        nn.init.xavier_uniform_(self._critic_linear.weight)
-        nn.init.constant_(self._critic_linear.bias, 0.)
+        nn.init.xavier_uniform_(self._logit_linear.weight)
+        nn.init.constant_(self._logit_linear.bias, 0.)
 
     def forward(self, power_alloc, beam_alloc, node_power_attn, edge_power_attn, edge_index, ptr, batch, logit_mask=None):
         resource_alloc = torch.cat([power_alloc, beam_alloc], dim=2).reshape(power_alloc.size(0), -1)
@@ -47,86 +47,39 @@ class AC(nn.Module):
         edge_power_attn = edge_power_attn.reshape(edge_power_attn.size(0), -1)
         x = self._graph_transformer(input=resource_alloc, node_embedding=node_power_attn,
                                     edge_attr=edge_power_attn, edge_index=edge_index)
-        
-        value = global_mean_pool(x=x, batch=batch)
-        value = self._critic_linear(value)[:, 0]
 
-        used_rb_mask = torch.sum(power_alloc, dim=2) > 0
-        next_rb = ~used_rb_mask * torch.arange(self._num_rb, device=self._device).to(float)
-        next_rb[used_rb_mask] = torch.inf
-        next_rb_idx = torch.argmin(next_rb, dim=1) # num_node
-        rb = self._rb_embedding(next_rb_idx) 
-
-        x = torch.cat([x, rb], dim=1)
-
-        logit = self._actor_linear(x)
-        logit = logit.reshape(power_alloc.size(0), self._num_power_level, self._num_beam)
         
-        
+        logit = self._logit_linear(x)
+
         if logit_mask is not None:
-            rb_indices = next_rb_idx.view(-1, 1, 1).expand(-1, 1, logit_mask.size(2))
-            logit_mask = torch.gather(logit_mask, dim=1, index=rb_indices).squeeze(1).unsqueeze(-1)
+            logit_mask = torch.gather(logit_mask, dim=1, index=1).squeeze(1).unsqueeze(-1)
             logit = torch.where(logit_mask, logit, other=-torch.inf)
 
-        act_dist = ActDist(logit, ptr, next_rb_idx, device=self._device)
+        return logit
 
-        return act_dist, value
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=5000, device='cpu'):
+        super().__init__()
+        # [max_len, 1]
+        position = torch.arange(0, max_len, dtype=torch.float, device=device).unsqueeze(1)
+        # [d_model//2]
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2, dtype=torch.float, device=device) *
+            (-torch.log(torch.tensor(10000.0, device=device)) / d_model)
+        )
 
-class ActDist:
-    def __init__(self, logit, ptr, rb_idx, device):
-        self._device = device
-        self._ptr = ptr
-        self._rb_idx = rb_idx
-        self._batch_size = int(ptr.shape[0]) - 1
-        self._num_power_level = logit.size(1)
-        self._num_beam = logit.size(2)
-        
-        self._dist_list = []
-        for idx in range(self._batch_size):
-            l = logit[ptr[idx]: ptr[idx + 1], :, :].to(self._device)
-            l = torch.flatten(l)
-            if torch.all(torch.isinf(l)):
-                dist = None
-            else:
-                dist = Categorical(logits=l)
-            self._dist_list.append(dist)
+        pe = torch.zeros(max_len, d_model, device=device)
+        pe[:, 0::2] = torch.sin(position * div_term)  # even index
+        pe[:, 1::2] = torch.cos(position * div_term)  # odd index
 
-    def sample(self):
-        action = []
-        for i, dist in enumerate(self._dist_list):
-            if dist is not None:
-                idx = int(dist.sample())
-                node = idx // (self._num_power_level *self._num_beam)
-                pow_beam = idx % (self._num_power_level *self._num_beam )
-                power = pow_beam // (self._num_beam)
-                beam = pow_beam % (self._num_beam)
+        self.register_buffer('pe', pe)  # [max_len, d_model]
 
-                rb = int(self._rb_idx[self._ptr[i] + node].item())
-            else:
-                node, rb, power, beam = -1, -1, -1, -1
-            action.append([node, rb, power, beam])
-        action = torch.Tensor(action).to(torch.int).to(self._device)
-        return action
-
-    def entropy(self):
-        entropy = []
-        for dist in self._dist_list:
-            entropy.append(dist.entropy() if dist is not None else torch.tensor(0.0))
-        entropy = torch.Tensor(entropy).to(self._device)
-        return entropy
-
-    def log_prob(self, action):
-        action = torch.Tensor(action).to(self._device)
-        lp = []
-        for a, dist in zip(action, self._dist_list):
-            if dist is not None:
-                node, rb, power, beam = a
-                idx = node * self._num_beam * self._num_power_level +  power * self._num_beam + beam
-                lp.append(dist.log_prob(idx))
-            else:
-                lp.append(torch.tensor(-torch.inf).to(self._device))
-        lp = torch.stack(lp, dim=0)
-        return lp
+    def forward(self, index):
+        """
+        index: 정수 scalar or (B,) shape의 텐서
+        return: positional vector(s) → shape: (B, d_model) or (d_model,)
+        """
+        return self.pe[index]
 
 
 class GraphTransformer(nn.Module):

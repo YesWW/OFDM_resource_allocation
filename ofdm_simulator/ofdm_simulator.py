@@ -11,7 +11,7 @@ import cupy as cp
 
 class OFDMSimulator:
     def __init__(self, data_dir, tx_power_range, max_bs_power, noise_spectral_density=-174.0, alpha=1.0,
-                 num_ue_range=None, gpu=False):
+                 num_ue_range=None, gpu=False, num_rb=16):
         self.data_dir = Path(__file__).parents[0].resolve() / data_dir
         self.file_list = [os.path.join(self.data_dir, f)
                           for f in os.listdir(self.data_dir) if f.endswith('.pkl') and f != 'background.pkl']
@@ -20,7 +20,8 @@ class OFDMSimulator:
             self.background = dill.load(f)
         with open(self.file_list[0], 'rb') as f:
             sample = dill.load(f)
-        self.num_bs, self.num_rb, self.num_beam = sample['ch'].shape
+        self.num_bs, _, self.num_beam = sample['ch'].shape
+        self.num_rb = num_rb
         self.num_ue_range = num_ue_range
         self.tx_power = np.linspace(start=0.0, stop=tx_power_range['max_power'], num=tx_power_range['num_power_level'])
         self.num_power_level = tx_power_range['num_power_level']
@@ -51,9 +52,7 @@ class OFDMSimulator:
             pos.append(data['pos'])
         ch = np.stack(ch, axis=0)  # ue, bs, rb, beam
         ###
-        # num_rb = 4
-        # ch = ch[:,:,:num_rb,:]
-        # self.num_rb = num_rb
+        ch = ch[:,:,:self.num_rb,:]
         ###
         pos = np.stack(pos, axis=0)  # ue, pos
         pow = np.sum(np.sum(ch, axis=-1), axis=-1)  # ue, bs
@@ -85,10 +84,7 @@ class OFDMSimulator:
         graph_list = []
         for network in networks:
             ch = network['ch']  # ue, bs, rb, beam
-            # Normalize and flatten channel
             ch = 10.0 * np.log10(ch)  # dB scale
-            ch = np.clip(ch, min_attn_db, max_attn_db)
-            ch = (ch - min_attn_db) / (max_attn_db - min_attn_db)
             ch = np.reshape(ch, newshape=(ch.shape[0], ch.shape[1], -1)) # ue, bs, rb*beam
             assoc = network['assoc']  # ue
             num_link = ch.shape[0]
@@ -100,10 +96,10 @@ class OFDMSimulator:
                 for i in range(num_link):
                     if i != l:
                         interf = ch[l, assoc[i]]
-                        valid = np.any(interf > 0)
-                        if valid:
-                            edge_index.append(np.array((i, l)))
-                            edge_attr.append(interf)
+                        if np.mean(interf) < min_attn_db:
+                            continue
+                        edge_index.append(np.array((i, l)))
+                        edge_attr.append(interf)
             node_attr = torch.tensor(np.stack(node_attr, axis=0), dtype=torch.float32, device=device)
             edge_index = torch.tensor(np.stack(edge_index, axis=1), dtype=torch.int32, device=device)
             edge_attr = torch.tensor(np.stack(edge_attr, axis=0), dtype=torch.float32, device=device)
@@ -217,24 +213,10 @@ class OFDMSimulator:
         ax.set_proj_type('ortho')
         plt.show()
 
-#     def generate_pyg_dataset(self, num_networks, min_attn_db, max_attn_db, file_name_prefix, device='cpu'):
-#         networks = self.get_networks(num_networks=num_networks)
-#         graph_list = self.generate_pyg(networks, min_attn_db=min_attn_db, max_attn_db=max_attn_db, device='cuda:0')
-#         save_dir = Path(__file__).parents[0] / 'network' / str(file_name_prefix+ '_OFDM')
-
-#         InterfGraphDataset.save(graph_list, save_dir)
-    
-# class InterfGraphDataset(InMemoryDataset):
-#     def __init__(self, file_name):
-#         super().__init__()
-#         self._file_name = Path(__file__).parents[0] / 'network' / file_name
-#         self.load(str(self._file_name))
-
-
 if __name__ == '__main__':
     data_dir = 'myeongdong_arr_4_rb_16'
-    num_ue_range = [20, 40]  # Minimum and maximum number of UEs (randomly selected within range)
-    tx_power_range = {'max_power': 2, 'num_power_level': 4}#16}  # Power level quantization
+    num_ue_range = [60, 80]  # Minimum and maximum number of UEs (randomly selected within range)
+    tx_power_range = {'max_power': 2, 'num_power_level': 16}#16}  # Power level quantization
     max_bs_power = 10  # Maximum base station tx power (watt)
     noise_spectral_density = -174.0  # Noise spectral density (dBm/Hz)
     alpha = 0.0  # coefficient for alpha-fairness function (0.0: sum, 1.0: proportional, inf: max-min)
@@ -246,16 +228,16 @@ if __name__ == '__main__':
     # net.plot(network)
     #
     # # PyG test
-    #networks = net.get_networks(num_networks=1)
+    networks = net.get_networks(num_networks=1)
     #net.generate_pyg_dataset(num_networks=100, min_attn_db=-200, max_attn_db=-50, device='cuda:0', file_name_prefix='train')
-    #g = net.generate_pyg(num_networks=100, min_attn_db=-200, max_attn_db=-50, device='cuda:0')
+    g = net.generate_pyg(networks, min_attn_db=-200, max_attn_db=-50, device='cuda:0')
     # print(1)
     #
     # Calculating performance target test
-    networks = net.get_networks(num_networks=16)
-    solutions = net.generate_random_solution(networks=networks)
-    for i in range(16):
-        print(net.is_solution_feasible(networks[i], solutions[i]))
+    # networks = net.get_networks(num_networks=16)
+    # solutions = net.generate_random_solution(networks=networks)
+    # for i in range(16):
+    #     print(net.is_solution_feasible(networks[i], solutions[i]))
     # opt_tgt = net.get_optimization_target(networks[0], solutions[0])
     # feasible = net.is_solution_feasible(networks[0], solutions[0])
 

@@ -6,7 +6,7 @@ sim.tx_power_range:
 sim.max_bs_power: 10
 sim.noise_spectral_density: -174.0
 sim.alpha: 0.0
-sim.num_ue_range: [60, 100] #[50, 100]
+sim.num_ue_range: [60, 80] #[50, 100]
 sim.gpu: True
 sim.num_rb: 16
 
@@ -28,13 +28,13 @@ train.num_action_iter: 100
 train.num_graph_repeat: 10000  # original 10000
 train.train_dataset: 'train_OFDM'
 train.eval_dataset: 'test_OFDM'
-train.graph_batch_size: 16 # Set it to 1 for checking Tabu Search Implementation
+train.graph_batch_size: 4 # Set it to 1 for checking Tabu Search Implementation
 train.gamma: 0.99  # reward discount factor
 train.lambda: 0.9  # parameter for lambda return (0: TD, 1: MC)
-train.buffer_batch_size: 32
+train.buffer_batch_size: 4
 train.ac_lr: 0.0003  # actor critic learning rate
 
-train.rollout_batch_size: 32 #16
+train.rollout_batch_size: 4 #16
 train.min_attn_db: -200
 train.max_attn_db: -50
 train.power_attn.num_level: 151
@@ -52,3 +52,6 @@ train.act_prob_ratio_exponent_clip: 10.0
 train.eval_period: 5
 train.eval_batch_size: 5  # Controls how many eval batch size are in the data
 
+
+train.beam_width: 5
+train.expansion_factor : 4

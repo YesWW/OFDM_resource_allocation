@@ -9,7 +9,7 @@ import torch.nn as nn
 from torch_geometric.data import Data, Batch
 from torch_geometric.loader import DataLoader
 from torch_geometric.utils import degree
-from ofdm_simulator.ofdm_simulator_rb import OFDMSimulator
+from ofdm_simulator.ofdm_simulator import OFDMSimulator
 from model import AC
 from utility import Buffer, get_buffer_dataloader
 import wandb
@@ -78,6 +78,7 @@ class trainer:
             self._eval_networks = self._sim.generate_evaluation_networks(self._num_evaluation_networks)
             self._eval_data = self._sim.generate_pyg(self._eval_networks, min_attn_db=self._min_attn_db,
                                                       max_attn_db=self._max_attn_db, device=self._device)
+
 
     def quantize_power_attn(self, g):
         '''Quantize the continous data graphs into a discrete data 
@@ -343,6 +344,8 @@ class trainer:
         unterminated_mask = (torch.sum(power_alloc, dim=2) < 1.0)[:, :, None, None]  # [num_node, num_rb, 1, 1]
         logit_mask = valid_mask & unterminated_mask  
         return logit_mask.squeeze(-1)
+
+
 
 if __name__ == '__main__':
     device = 'cuda:0'
